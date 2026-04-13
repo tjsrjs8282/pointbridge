@@ -1,0 +1,47 @@
+:root {
+  --accent-start: #dc71ff;
+  --accent-end: #58d6ff;
+
+  --app-bg-base: #140f2c;
+  --app-bg-radial-a: #3a1d65;
+  --app-bg-radial-b: #3c1f7e;
+
+  --panel-bg: rgba(33, 22, 66, 0.72);
+  --panel-border: rgba(188, 158, 255, 0.2);
+  --panel-bg-strong: rgba(31, 22, 64, 0.96);
+
+  --text-primary: #f3efff;
+  --text-secondary: #d7cdf1;
+  --text-muted: #b8aed8;
+
+  --input-bg: rgba(80, 59, 134, 0.32);
+  --input-border: rgba(191, 160, 255, 0.25);
+  --input-placeholder: #bdb0dc;
+  --bg-modal: rgba(31, 22, 64, 0.96);
+  --bg-modal-overlay: rgba(10, 8, 24, 0.7);
+  --bg-input: var(--input-bg);
+  --bg-input-focus: color-mix(in srgb, var(--bg-input) 70%, var(--accent-start) 30%);
+  --border-input: var(--input-border);
+  --border-input-focus: color-mix(in srgb, var(--accent-start) 50%, var(--accent-end) 50%);
+  --bg-select: var(--bg-input);
+  --bg-select-menu: var(--dropdown-bg);
+  --scroll-track: color-mix(in srgb, var(--panel-bg) 70%, transparent);
+  --scroll-thumb: color-mix(in srgb, var(--accent-start) 52%, var(--accent-end) 48%);
+  --scroll-thumb-hover: color-mix(in srgb, var(--accent-start) 45%, white 25%);
+
+  --overlay-bg: rgba(10, 8, 24, 0.7);
+  --dropdown-bg: rgba(34, 24, 67, 0.96);
+
+  --button-text: #ffffff;
+  --button-secondary-bg: rgba(90, 67, 148, 0.35);
+  --button-secondary-border: rgba(190, 160, 255, 0.3);
+
+  --badge-bg: rgba(90, 65, 155, 0.4);
+  --badge-text: #ece3ff;
+  --toast-bg: rgba(42, 33, 80, 0.95);
+  --toast-border: rgba(188, 158, 255, 0.3);
+
+  --radius-main: 20px;
+  --radius-sub: 14px;
+  --motion-scale: 1;
+}

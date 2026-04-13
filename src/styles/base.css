@@ -1,0 +1,150 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, 'Segoe UI', Roboto, sans-serif;
+  background:
+    radial-gradient(1200px circle at 20% 15%, var(--app-bg-radial-a), transparent 55%),
+    radial-gradient(1000px circle at 85% 70%, var(--app-bg-radial-b), transparent 55%),
+    var(--app-bg-base);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text-primary);
+}
+
+input,
+select,
+textarea {
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  transition:
+    border-color calc(180ms * var(--motion-scale)) ease,
+    background-color calc(180ms * var(--motion-scale)) ease,
+    box-shadow calc(180ms * var(--motion-scale)) ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  background: var(--bg-input-focus);
+  border-color: var(--border-input-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--border-input-focus) 28%, transparent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--input-placeholder);
+}
+
+input[type='checkbox'] {
+  accent-color: var(--accent-start);
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+}
+
+body.compact-mode .main-card {
+  padding: 0.9rem 0.95rem;
+}
+
+body.reduced-motion * {
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+}
+
+body[data-corner-radius='sm'] {
+  --radius-main: 14px;
+  --radius-sub: 10px;
+}
+
+body[data-corner-radius='md'] {
+  --radius-main: 20px;
+  --radius-sub: 14px;
+}
+
+body[data-corner-radius='lg'] {
+  --radius-main: 28px;
+  --radius-sub: 20px;
+}
+
+body[data-motion-intensity='reduced'] {
+  --motion-scale: 0.7;
+}
+
+body[data-motion-intensity='normal'] {
+  --motion-scale: 1;
+}
+
+body[data-motion-intensity='strong'] {
+  --motion-scale: 1.35;
+}
+
+body::-webkit-scrollbar,
+.content-scroll-area::-webkit-scrollbar,
+.sidebar-panel::-webkit-scrollbar,
+.right-panel::-webkit-scrollbar,
+.auth-layout::-webkit-scrollbar,
+.chat-messages::-webkit-scrollbar,
+.login-modal-card::-webkit-scrollbar,
+.seller-modal-card::-webkit-scrollbar,
+.profile-edit-modal::-webkit-scrollbar,
+.order-modal-card::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+body::-webkit-scrollbar-track,
+.content-scroll-area::-webkit-scrollbar-track,
+.sidebar-panel::-webkit-scrollbar-track,
+.right-panel::-webkit-scrollbar-track,
+.auth-layout::-webkit-scrollbar-track,
+.chat-messages::-webkit-scrollbar-track,
+.login-modal-card::-webkit-scrollbar-track,
+.seller-modal-card::-webkit-scrollbar-track,
+.profile-edit-modal::-webkit-scrollbar-track,
+.order-modal-card::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+  border-radius: 999px;
+}
+
+body::-webkit-scrollbar-thumb,
+.content-scroll-area::-webkit-scrollbar-thumb,
+.sidebar-panel::-webkit-scrollbar-thumb,
+.right-panel::-webkit-scrollbar-thumb,
+.auth-layout::-webkit-scrollbar-thumb,
+.chat-messages::-webkit-scrollbar-thumb,
+.login-modal-card::-webkit-scrollbar-thumb,
+.seller-modal-card::-webkit-scrollbar-thumb,
+.profile-edit-modal::-webkit-scrollbar-thumb,
+.order-modal-card::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 1px solid color-mix(in srgb, var(--scroll-thumb) 80%, transparent);
+  background-clip: padding-box;
+}
+
+body::-webkit-scrollbar-thumb:hover,
+.content-scroll-area::-webkit-scrollbar-thumb:hover,
+.sidebar-panel::-webkit-scrollbar-thumb:hover,
+.right-panel::-webkit-scrollbar-thumb:hover,
+.auth-layout::-webkit-scrollbar-thumb:hover,
+.chat-messages::-webkit-scrollbar-thumb:hover,
+.login-modal-card::-webkit-scrollbar-thumb:hover,
+.seller-modal-card::-webkit-scrollbar-thumb:hover,
+.profile-edit-modal::-webkit-scrollbar-thumb:hover,
+.order-modal-card::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  border-radius: 999px;
+}

@@ -1,0 +1,209 @@
+.section-title h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.15rem;
+}
+
+.section-title p {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.btn-primary,
+.btn-secondary {
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
+.btn-primary {
+  border: 0;
+  color: var(--button-text);
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+}
+
+.btn-secondary {
+  border: 1px solid var(--button-secondary-border);
+  color: var(--text-secondary);
+  background: var(--button-secondary-bg);
+}
+
+.badge {
+  color: var(--badge-text);
+  background: var(--badge-bg);
+}
+
+.topbar-dropdown,
+.login-modal-card,
+.seller-modal-card,
+.profile-edit-modal {
+  background: var(--panel-bg-strong);
+  border-color: var(--panel-border);
+}
+
+.topbar-dropdown a,
+.topbar-dropdown button {
+  color: var(--text-secondary);
+}
+
+.settings-chip-row button.active,
+.auth-modal-tabs button.active,
+.orders-tabs button.active {
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-end));
+}
+
+.auth-form input,
+.auth-form select,
+.seller-onboarding-form input,
+.seller-onboarding-form select,
+.seller-onboarding-form textarea,
+.profile-edit-form input,
+.settings-toggle-list select,
+.home-search-filter-row select {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+
+.login-modal-overlay,
+.seller-modal-overlay,
+.profile-edit-overlay,
+.order-modal-overlay {
+  background: var(--overlay-bg);
+}
+
+.toast {
+  border: 1px solid var(--toast-border);
+  background: var(--toast-bg);
+  color: var(--text-primary);
+  border-radius: var(--radius-sub);
+  padding: 0.6rem 0.75rem;
+}
+
+.login-modal-overlay,
+.seller-modal-overlay,
+.profile-edit-overlay,
+.order-modal-overlay {
+  background: var(--bg-modal-overlay) !important;
+}
+
+.login-modal-card,
+.seller-modal-card,
+.profile-edit-modal,
+.order-modal-card {
+  background: var(--bg-modal) !important;
+  border: 1px solid var(--panel-border) !important;
+  color: var(--text-primary);
+}
+
+.login-modal-card,
+.seller-modal-card,
+.profile-edit-modal,
+.order-modal-card,
+.chat-messages {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+}
+
+.login-modal-card,
+.seller-modal-card,
+.profile-edit-modal,
+.order-modal-card {
+  max-height: min(86vh, 780px);
+  overflow: hidden;
+}
+
+.login-modal-card h2,
+.seller-modal-card h2,
+.profile-edit-modal h2,
+.order-modal-card h2 {
+  color: var(--text-primary) !important;
+}
+
+.login-modal-card p,
+.seller-modal-subtitle,
+.auth-link-row,
+.profile-edit-form label,
+.seller-onboarding-form label,
+.order-field label {
+  color: var(--text-secondary) !important;
+}
+
+.login-modal-close-btn,
+.seller-modal-close-btn,
+.profile-edit-head button,
+.order-modal-head button {
+  background: var(--button-secondary-bg) !important;
+  border: 1px solid var(--button-secondary-border) !important;
+  color: var(--text-primary) !important;
+}
+
+.auth-modal-tabs button {
+  background: color-mix(in srgb, var(--bg-modal) 78%, var(--accent-start) 22%) !important;
+  border: 1px solid var(--button-secondary-border) !important;
+  color: var(--text-secondary) !important;
+}
+
+.auth-modal-tabs button.active {
+  color: var(--button-text) !important;
+}
+
+.auth-form input,
+.auth-form select,
+.seller-onboarding-form input,
+.seller-onboarding-form select,
+.seller-onboarding-form textarea,
+.profile-edit-form input,
+.order-field input,
+.order-field select,
+.order-field textarea,
+.settings-toggle-list select,
+.home-search-filter-row select {
+  background: var(--bg-input) !important;
+  border: 1px solid var(--border-input) !important;
+  color: var(--text-primary) !important;
+}
+
+.auth-form input:focus,
+.auth-form select:focus,
+.seller-onboarding-form input:focus,
+.seller-onboarding-form select:focus,
+.seller-onboarding-form textarea:focus,
+.profile-edit-form input:focus,
+.order-field input:focus,
+.order-field select:focus,
+.order-field textarea:focus,
+.settings-toggle-list select:focus,
+.home-search-filter-row select:focus {
+  background: var(--bg-input-focus) !important;
+  border-color: var(--border-input-focus) !important;
+}
+
+.auth-form select,
+.seller-onboarding-form select,
+.order-field select,
+.settings-toggle-list select,
+.home-search-filter-row select {
+  background: var(--bg-select) !important;
+}
+
+.topbar-dropdown {
+  background: var(--bg-select-menu) !important;
+}
+
+.login-modal-links a,
+.login-modal-links button,
+.auth-link-row a,
+.auth-fallback-links a {
+  color: color-mix(in srgb, var(--accent-end) 72%, var(--text-primary) 28%) !important;
+}
+
+.auth-form button,
+.seller-onboarding-submit,
+.profile-edit-form button,
+.order-submit-btn {
+  color: var(--button-text) !important;
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-end)) !important;
+}
