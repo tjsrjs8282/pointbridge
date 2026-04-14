@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import useAuth from '../hooks/useAuth'
+import { registerSellerProfile } from '../lib/marketplace'
 
 const defaultForm = {
   sellerName: '',
@@ -16,8 +17,12 @@ function SellerOnboardingModal() {
     closeSellerOnboarding,
     saveSellerProfileDraft,
     sellerProfileDraft,
+    user,
+    refreshProfile,
   } = useAuth()
   const [form, setForm] = useState(defaultForm)
+  const [submitMessage, setSubmitMessage] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   if (!isSellerOnboardingOpen) return null
 
@@ -42,8 +47,31 @@ function SellerOnboardingModal() {
     reader.readAsDataURL(file)
   }
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
+    setSubmitMessage('')
+
+    if (!user?.id) {
+      setSubmitMessage('로그인 후 판매자 등록이 가능합니다.')
+      return
+    }
+
+    setIsSubmitting(true)
+    const { error } = await registerSellerProfile({
+      userId: user.id,
+      displayName: mergedForm.sellerName,
+      intro: mergedForm.description || mergedForm.tagline,
+      region: mergedForm.region,
+      categories: [mergedForm.category],
+      isActive: true,
+    })
+    setIsSubmitting(false)
+
+    if (error) {
+      setSubmitMessage(error.message ?? '판매자 등록 중 오류가 발생했습니다.')
+      return
+    }
+
     saveSellerProfileDraft({
       sellerName: mergedForm.sellerName,
       category: mergedForm.category,
@@ -52,6 +80,7 @@ function SellerOnboardingModal() {
       region: mergedForm.region,
       profileImage: mergedForm.profileImage,
     })
+    await refreshProfile()
   }
 
   return (
@@ -64,7 +93,7 @@ function SellerOnboardingModal() {
           </button>
         </div>
         <p className="seller-modal-subtitle">
-          지금은 UI 중심 단계입니다. 제출한 데이터는 임시 draft로 저장됩니다.
+          제출하면 판매자 프로필이 DB에 저장되고 판매자 모드가 활성화됩니다.
         </p>
 
         <form className="seller-onboarding-form" onSubmit={handleSubmit}>
@@ -138,9 +167,10 @@ function SellerOnboardingModal() {
             </div>
           </div>
 
-          <button type="submit" className="seller-onboarding-submit-btn">
-            서비스 등록 시작
+          <button type="submit" className="seller-onboarding-submit-btn" disabled={isSubmitting}>
+            {isSubmitting ? '등록 중...' : '서비스 등록 시작'}
           </button>
+          {submitMessage ? <p className="muted">{submitMessage}</p> : null}
         </form>
       </section>
     </div>

@@ -4,14 +4,11 @@ import useAuth from '../hooks/useAuth'
 const baseMenus = [
   { to: '/', label: '홈', icon: '🏠' },
   { to: '/sellers', label: '판매자 찾기', icon: '🔎' },
-  { to: '/orders', label: '주문내역', requiresAuth: true, icon: '📋' },
   { to: '/chat', label: '채팅', requiresAuth: true, icon: '💬' },
-  { to: '/points', label: '포인트', requiresAuth: true, icon: '🪙' },
-  { to: '/profile', label: '내 프로필', requiresAuth: true, icon: '👤' },
   { to: '/settings', label: '설정', requiresAuth: true, icon: '⚙️' },
 ]
 
-function Sidebar({ isSellerMode }) {
+function Sidebar({ isSellerMode, isCollapsed, onToggleCollapse }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { requireAuth } = useAuth()
@@ -32,7 +29,7 @@ function Sidebar({ isSellerMode }) {
   )
 
   return (
-    <aside className="sidebar-panel">
+    <aside className={`sidebar-panel ${isCollapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-brand">
         <p>PointBridge</p>
         <span>WORK SERVICE HUB</span>
@@ -83,6 +80,17 @@ function Sidebar({ isSellerMode }) {
           </button>
         ) : null}
       </nav>
+      <div className="sidebar-footer">
+        <button
+          type="button"
+          className="sidebar-collapse-btn"
+          onClick={onToggleCollapse}
+          aria-label={isCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
+        >
+          <span>{isCollapsed ? '»' : '«'}</span>
+          <span className="sidebar-link-text">{isCollapsed ? '펼치기' : '접기'}</span>
+        </button>
+      </div>
     </aside>
   )
 }

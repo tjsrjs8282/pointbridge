@@ -332,6 +332,15 @@ export function AuthProvider({ children }) {
       ...draft,
       updatedAt: new Date().toISOString(),
     })
+    setProfile((prev) =>
+      prev
+        ? {
+            ...prev,
+            is_seller: true,
+            seller_status: 'active',
+          }
+        : prev,
+    )
     setIsSellerOnboardingOpen(false)
   }, [])
 

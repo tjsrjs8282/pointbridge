@@ -14,9 +14,13 @@ function SellerCard({ seller }) {
       <p className="seller-intro">{seller.intro}</p>
 
       <div className="seller-meta-grid">
-        <span>평점 {seller.rating}</span>
-        <span>리뷰 {seller.reviewCount}건</span>
-        <span>시작 {seller.startPrice.toLocaleString()}P</span>
+        <Link to={`/seller/${seller.id}#reviews`} className="seller-meta-link">
+          평점 {Number(seller.rating ?? 0).toFixed(1)}
+        </Link>
+        <Link to={`/seller/${seller.id}#reviews`} className="seller-meta-link">
+          리뷰 {Number(seller.reviewCount ?? 0)}건
+        </Link>
+        <span>시작 {Number(seller.startPrice ?? 0).toLocaleString()}P</span>
         <span>지역 {seller.region}</span>
       </div>
       <Link className="seller-link-btn" to={`/seller/${seller.id}`}>

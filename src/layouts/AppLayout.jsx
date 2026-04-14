@@ -10,10 +10,8 @@ import useAuth from '../hooks/useAuth'
 const mobileMenus = [
   { to: '/', label: '홈', icon: '🏠' },
   { to: '/sellers', label: '판매자 찾기', icon: '🔎' },
-  { to: '/orders', label: '주문내역', requiresAuth: true, icon: '📋' },
   { to: '/chat', label: '채팅', requiresAuth: true, icon: '💬' },
-  { to: '/points', label: '포인트', requiresAuth: true, icon: '🪙' },
-  { to: '/profile', label: '내 프로필', requiresAuth: true, icon: '👤' },
+  { to: '/mypage?tab=activity', label: '마이페이지', requiresAuth: true, icon: '👤' },
   { to: '/settings', label: '설정', requiresAuth: true, icon: '⚙️' },
 ]
 
@@ -21,7 +19,14 @@ function AppLayout({ isSellerMode = false }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const { requireAuth, signOut, profile, user, isLoggedIn } = useAuth()
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebar') === 'collapsed'
+    } catch {
+      return false
+    }
+  })
+  const { requireAuth, signOut, profile, user, isLoggedIn, requestSellerOnboarding } = useAuth()
 
   const nickname =
     profile?.nickname ??
@@ -32,6 +37,9 @@ function AppLayout({ isSellerMode = false }) {
     '사용자'
   const avatarText = nickname.slice(0, 2).toUpperCase()
   const avatarUrl = profile?.avatar_url ?? ''
+  const pointBalance = Number(profile?.point_balance ?? 0)
+  const isSellerRegistered = Boolean(profile?.is_seller) || profile?.seller_status === 'active'
+  const sellerCtaLabel = isSellerRegistered ? '판매 목록 편집' : '판매자 등록'
 
   const mobileMenuItems = useMemo(() => {
     const seller = isSellerMode
@@ -41,6 +49,17 @@ function AppLayout({ isSellerMode = false }) {
   }, [isSellerMode])
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false)
+  const toggleSidebarCollapse = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem('sidebar', next ? 'collapsed' : 'expanded')
+      } catch {
+        // Ignore storage write failure
+      }
+      return next
+    })
+  }
 
   const handleMobileMenuClick = (menu) => {
     if (menu.requiresAuth) {
@@ -64,8 +83,12 @@ function AppLayout({ isSellerMode = false }) {
   }
 
   return (
-    <main className="app-shell">
-      <Sidebar isSellerMode={isSellerMode} />
+    <main className={`app-shell ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      <Sidebar
+        isSellerMode={isSellerMode}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={toggleSidebarCollapse}
+      />
       <section className="content-panel">
         <TopBar onOpenMobileMenu={() => setIsMobileMenuOpen(true)} />
         <div className="content-scroll-area">
@@ -122,13 +145,13 @@ function AppLayout({ isSellerMode = false }) {
 
             <section className="mobile-drawer-panel panel-card gradient">
               <p>보유 포인트</p>
-              <h2>12,450P</h2>
-              <span>이번 달 +1,220P</span>
+              <h2>{pointBalance.toLocaleString()}P</h2>
+              <span>계정 허브에서 포인트 내역을 관리하세요</span>
             </section>
 
             <section className="mobile-drawer-panel panel-card">
-              <h3>내 프로필</h3>
-              <Link to="/profile" onClick={closeMobileMenu} className="mobile-drawer-profile">
+              <h3>내 계정 바로가기</h3>
+              <Link to="/mypage?tab=activity" onClick={closeMobileMenu} className="mobile-drawer-profile">
                 <div className="right-profile-avatar">
                   {avatarUrl ? <img src={avatarUrl} alt="내 프로필 이미지" /> : avatarText}
                 </div>
@@ -137,6 +160,87 @@ function AppLayout({ isSellerMode = false }) {
                   <p className="profile-role">{profile?.role ?? '구매자/판매자'}</p>
                 </div>
               </Link>
+              <div className="settings-account-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    requireAuth({
+                      reason: '프로필 편집은 로그인 후 이용할 수 있습니다.',
+                      onSuccess: () => {
+                        navigate('/mypage?tab=activity', { state: { openProfileEdit: true } })
+                        closeMobileMenu()
+                      },
+                    })
+                  }}
+                >
+                  프로필 편집
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    requireAuth({
+                      reason: '비밀번호 변경은 로그인 후 이용할 수 있습니다.',
+                      onSuccess: () => {
+                        navigate('/mypage?tab=activity', { state: { openPasswordModal: true } })
+                        closeMobileMenu()
+                      },
+                    })
+                  }}
+                >
+                  비밀번호 변경
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    requireAuth({
+                      reason: '주문내역은 로그인 후 이용할 수 있습니다.',
+                      onSuccess: () => {
+                        navigate('/mypage?tab=orders')
+                        closeMobileMenu()
+                      },
+                    })
+                  }}
+                >
+                  주문내역
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    requireAuth({
+                      reason: '포인트 충전은 로그인 후 이용할 수 있습니다.',
+                      onSuccess: () => {
+                        navigate('/mypage?tab=points', { state: { openPointCharge: true } })
+                        closeMobileMenu()
+                      },
+                    })
+                  }}
+                >
+                  충전하기
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => {
+                    requireAuth({
+                      reason: '판매자 기능은 로그인 후 이용할 수 있습니다.',
+                      onSuccess: () => {
+                        if (isSellerRegistered) {
+                          navigate('/seller-dashboard')
+                        } else {
+                          requestSellerOnboarding()
+                        }
+                        closeMobileMenu()
+                      },
+                    })
+                  }}
+                >
+                  {sellerCtaLabel}
+                </button>
+              </div>
             </section>
 
             <section className="mobile-drawer-panel panel-card">

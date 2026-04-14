@@ -1,29 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import ProfileEditModal from '../components/ProfileEditModal'
 import SectionTitle from '../components/SectionTitle'
-import PrimaryButton from '../components/PrimaryButton'
-import SecondaryButton from '../components/SecondaryButton'
 import useAuth from '../hooks/useAuth'
 import useSettings from '../hooks/useSettings'
-import { supabase } from '../lib/supabase'
-
-const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/
 
 function SettingsPage() {
   const { settings, setSettings, settingsLoading, themePresets } = useSettings()
   const { user, requireAuth } = useAuth()
   const navigate = useNavigate()
-  const [isProfileEditOpen, setIsProfileEditOpen] = useState(false)
-  const [isPasswordEditOpen, setIsPasswordEditOpen] = useState(false)
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    passwordConfirm: '',
-  })
-  const [passwordError, setPasswordError] = useState('')
-  const [passwordNotice, setPasswordNotice] = useState('')
-  const [isSavingPassword, setIsSavingPassword] = useState(false)
 
   useEffect(() => {
     if (settingsLoading) return
@@ -50,6 +34,7 @@ function SettingsPage() {
     ],
     [],
   )
+
   const themePresetOptions = useMemo(
     () => [
       { key: 'darkViolet', label: 'Dark Violet' },
@@ -80,66 +65,7 @@ function SettingsPage() {
     )
   }
 
-  if (!user?.id) {
-    return null
-  }
-
-  const openPasswordModal = () => {
-    setPasswordForm({
-      currentPassword: '',
-      newPassword: '',
-      passwordConfirm: '',
-    })
-    setPasswordError('')
-    setPasswordNotice('')
-    setIsPasswordEditOpen(true)
-  }
-
-  const handlePasswordSave = async (event) => {
-    event.preventDefault()
-    setPasswordError('')
-    setPasswordNotice('')
-
-    if (!user?.email) {
-      setPasswordError('로그인 정보가 확인되지 않습니다.')
-      return
-    }
-    if (!passwordForm.currentPassword) {
-      setPasswordError('현재 비밀번호를 입력해 주세요.')
-      return
-    }
-    if (passwordForm.newPassword !== passwordForm.passwordConfirm) {
-      setPasswordError('새 비밀번호가 일치하지 않습니다')
-      return
-    }
-    if (!passwordRegex.test(passwordForm.newPassword)) {
-      setPasswordError('새 비밀번호는 8자 이상, 영문+숫자를 포함해야 합니다.')
-      return
-    }
-
-    try {
-      setIsSavingPassword(true)
-      const { error: verifyError } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: passwordForm.currentPassword,
-      })
-      if (verifyError) throw new Error('현재 비밀번호가 올바르지 않습니다')
-
-      const { error: updateError } = await supabase.auth.updateUser({ password: passwordForm.newPassword })
-      if (updateError) throw new Error(updateError.message)
-
-      setPasswordNotice('비밀번호가 변경되었습니다.')
-      setPasswordForm({ currentPassword: '', newPassword: '', passwordConfirm: '' })
-      setTimeout(() => {
-        setIsPasswordEditOpen(false)
-        setPasswordNotice('')
-      }, 900)
-    } catch (error) {
-      setPasswordError(error?.message ?? '비밀번호 변경 중 문제가 발생했습니다.')
-    } finally {
-      setIsSavingPassword(false)
-    }
-  }
+  if (!user?.id) return null
 
   return (
     <div className="page-stack">
@@ -254,9 +180,7 @@ function SettingsPage() {
             <input
               type="checkbox"
               checked={settings.compactMode}
-              onChange={(event) =>
-                setSettings({ compactMode: event.target.checked })
-              }
+              onChange={(event) => setSettings({ compactMode: event.target.checked })}
             />
             컴팩트 모드
           </label>
@@ -308,9 +232,7 @@ function SettingsPage() {
             사이드바 기본 상태
             <select
               value={settings.sidebarDefaultState}
-              onChange={(event) =>
-                setSettings({ sidebarDefaultState: event.target.value })
-              }
+              onChange={(event) => setSettings({ sidebarDefaultState: event.target.value })}
             >
               <option value="expanded">펼침</option>
               <option value="collapsed">접힘</option>
@@ -320,9 +242,7 @@ function SettingsPage() {
             <input
               type="checkbox"
               checked={settings.reducedMotion}
-              onChange={(event) =>
-                setSettings({ reducedMotion: event.target.checked })
-              }
+              onChange={(event) => setSettings({ reducedMotion: event.target.checked })}
             />
             애니메이션 감소
           </label>
@@ -348,72 +268,12 @@ function SettingsPage() {
             <input
               type="checkbox"
               checked={settings.saveRecentSearches}
-              onChange={(event) =>
-                setSettings({ saveRecentSearches: event.target.checked })
-              }
+              onChange={(event) => setSettings({ saveRecentSearches: event.target.checked })}
             />
             최근 검색어 저장
           </label>
         </div>
       </section>
-
-      <section className="main-card settings-card">
-        <SectionTitle title="계정 관련" />
-        <div className="settings-account-actions">
-          <SecondaryButton onClick={openPasswordModal}>비밀번호 변경</SecondaryButton>
-          <PrimaryButton onClick={() => setIsProfileEditOpen(true)}>프로필 편집</PrimaryButton>
-        </div>
-      </section>
-
-      <ProfileEditModal isOpen={isProfileEditOpen} onClose={() => setIsProfileEditOpen(false)} />
-
-      {isPasswordEditOpen ? (
-        <div className="profile-edit-overlay settings-modal-overlay" role="presentation">
-          <section className="profile-edit-modal settings-modal-card" role="dialog" aria-modal="true">
-            <div className="profile-edit-head">
-              <h2>비밀번호 변경</h2>
-              <button type="button" onClick={() => setIsPasswordEditOpen(false)}>×</button>
-            </div>
-            <form className="profile-edit-form settings-modal-form" onSubmit={handlePasswordSave}>
-              <label>
-                현재 비밀번호
-                <input
-                  type="password"
-                  value={passwordForm.currentPassword}
-                  onChange={(event) =>
-                    setPasswordForm((prev) => ({ ...prev, currentPassword: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                새 비밀번호
-                <input
-                  type="password"
-                  value={passwordForm.newPassword}
-                  onChange={(event) =>
-                    setPasswordForm((prev) => ({ ...prev, newPassword: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                새 비밀번호 확인
-                <input
-                  type="password"
-                  value={passwordForm.passwordConfirm}
-                  onChange={(event) =>
-                    setPasswordForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))
-                  }
-                />
-              </label>
-              {passwordError ? <small className="auth-error">{passwordError}</small> : null}
-              {passwordNotice ? <small className="auth-notice">{passwordNotice}</small> : null}
-              <button type="submit" disabled={isSavingPassword}>
-                {isSavingPassword ? '변경 중...' : '비밀번호 변경'}
-              </button>
-            </form>
-          </section>
-        </div>
-      ) : null}
     </div>
   )
 }

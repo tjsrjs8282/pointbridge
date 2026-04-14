@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import ProfileEditModal from '../components/ProfileEditModal'
 import ProfileImageModal from '../components/ProfileImageModal'
+import ProfileTabContent from '../components/profile/ProfileTabContent'
 import { mockUsers } from '../data/mockUsers'
 import useAuth from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
@@ -12,8 +14,18 @@ const gradeMeta = {
   Silver: { icon: 'S', label: 'Silver', roleLabel: '활동 우수' },
   Gold: { icon: 'G', label: 'Gold', roleLabel: '프리미엄' },
 }
+const profileTabs = [
+  { key: 'activity', label: '최근 활동' },
+  { key: 'orders', label: '주문내역' },
+  { key: 'reviews', label: '리뷰 관리' },
+  { key: 'wishlist', label: '찜/관심' },
+  { key: 'sales', label: '판매 서비스' },
+  { key: 'points', label: '포인트' },
+]
 
 function ProfilePage() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const { requestSellerOnboarding, profile: authProfile, user } = useAuth()
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isImageEditOpen, setIsImageEditOpen] = useState(false)
@@ -27,6 +39,8 @@ function ProfilePage() {
   const [passwordNotice, setPasswordNotice] = useState('')
   const [isSavingPassword, setIsSavingPassword] = useState(false)
   const [saveToast, setSaveToast] = useState('')
+  const [activeTab, setActiveTab] = useState('activity')
+  const [shouldFocusCharge, setShouldFocusCharge] = useState(false)
   const profile = useMemo(
     () => ({
       ...mockUsers[0],
@@ -53,6 +67,8 @@ function ProfilePage() {
     [authProfile],
   )
   const grade = gradeMeta[profile.grade] ?? gradeMeta.Bronze
+  const isSellerRegistered = Boolean(authProfile?.is_seller) || authProfile?.seller_status === 'active'
+  const sellerActionLabel = isSellerRegistered ? '판매자 대시보드 이동' : '판매자 등록'
 
   const activity = {
     orderCount: 17,
@@ -69,6 +85,50 @@ function ProfilePage() {
     setPasswordError('')
     setPasswordNotice('')
     setIsPasswordEditOpen(true)
+  }
+
+  useEffect(() => {
+    const nextState = location.state ?? {}
+    if (nextState.openProfileEdit) {
+      setIsEditOpen(true)
+    }
+    if (nextState.openPasswordModal) {
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        passwordConfirm: '',
+      })
+      setPasswordError('')
+      setPasswordNotice('')
+      setIsPasswordEditOpen(true)
+    }
+    if (nextState.openProfileEdit || nextState.openPasswordModal) {
+      navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.pathname, location.state, navigate])
+
+  useEffect(() => {
+    const nextState = location.state ?? {}
+    if (nextState.openPointCharge) {
+      setActiveTab('points')
+      setShouldFocusCharge(true)
+      navigate(`${location.pathname}?tab=points`, { replace: true, state: null })
+    }
+  }, [location.pathname, location.state, navigate])
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const tab = params.get('tab')
+    if (tab && profileTabs.some((item) => item.key === tab)) {
+      setActiveTab(tab)
+    }
+  }, [location.search])
+
+  const moveTab = (tab) => {
+    setActiveTab(tab)
+    const params = new URLSearchParams(location.search)
+    params.set('tab', tab)
+    navigate(`${location.pathname}?${params.toString()}`, { replace: true })
   }
 
   const handlePasswordSave = async (event) => {
@@ -134,9 +194,6 @@ function ProfilePage() {
               <span>{profile.avatar}</span>
             )}
           </div>
-          <button type="button" className="profile-image-upload-btn" onClick={() => setIsImageEditOpen(true)}>
-            프로필 사진 변경
-          </button>
         </div>
         <div className="profile-summary-text enhanced">
           <div className="profile-summary-header">
@@ -153,108 +210,55 @@ function ProfilePage() {
             <span>가입일 {profile.createdAt ? String(profile.createdAt).slice(0, 10) : profile.joinedAt}</span>
           </div>
           <div className="profile-summary-actions">
-            <button type="button" onClick={() => setIsImageEditOpen(true)}>
-              프로필 이미지 변경
-            </button>
             <button type="button" onClick={() => setIsEditOpen(true)}>
               프로필 편집
+            </button>
+            <button type="button" onClick={openPasswordModal}>
+              비밀번호 변경
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                if (isSellerRegistered) {
+                  navigate('/seller-dashboard')
+                  return
+                }
+                requestSellerOnboarding()
+              }}
+            >
+              {sellerActionLabel}
             </button>
           </div>
         </div>
       </section>
 
-      <section className="main-card">
-        <h2>프로필 정보</h2>
-        <div className="profile-info-grid">
-          <article>
-            <h3>한줄 소개</h3>
-            <p>{profile.intro}</p>
-          </article>
-          <article>
-            <h3>역할</h3>
-            <p>{profile.role}</p>
-          </article>
-          <article>
-            <h3>이름</h3>
-            <p>{profile.name}</p>
-          </article>
-          <article>
-            <h3>이메일</h3>
-            <p>{profile.email}</p>
-          </article>
-          <article>
-            <h3>연락처</h3>
-            <p>{profile.phone}</p>
-          </article>
-          <article>
-            <h3>주소</h3>
-            <p>
-              {profile.address}
-              {profile.addressDetail ? ` ${profile.addressDetail}` : ''}
-            </p>
-          </article>
-          <article>
-            <h3>활동 지역</h3>
-            <p>{profile.region}</p>
-          </article>
-          <article>
-            <h3>관심 카테고리</h3>
-            <p>{profile.interests}</p>
-          </article>
+      <section className="main-card profile-tabs-card">
+        <div className="profile-tab-list">
+          {profileTabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={activeTab === tab.key ? 'active' : ''}
+              onClick={() => moveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </section>
 
-      <section className="main-card settings-card profile-account-section">
-        <h2>계정 관련</h2>
-        <div className="settings-account-actions">
-          <button type="button" className="btn-secondary" onClick={openPasswordModal}>
-            비밀번호 변경
-          </button>
-          <button type="button" className="btn-primary" onClick={() => setIsEditOpen(true)}>
-            프로필 편집
-          </button>
-        </div>
-      </section>
-
-      <section className="main-card">
-        <h2>활동 요약</h2>
-        <div className="profile-activity-grid">
-          <article>
-            <h3>주문 수</h3>
-            <p>{activity.orderCount}건</p>
-          </article>
-          <article>
-            <h3>리뷰 수</h3>
-            <p>{activity.reviewCount}건</p>
-          </article>
-          <article>
-            <h3>보유 포인트</h3>
-            <p>{Number(profile.pointBalance ?? activity.points).toLocaleString()}P</p>
-          </article>
-        </div>
-      </section>
-
-      <section className="main-card profile-seller-cta">
-        <h3>판매자 모드로 전환해 서비스 등록하기</h3>
-        <p>
-          보유한 역량으로 서비스를 등록하고 주문을 받아 수익을 만들어보세요.
-          판매자 정보 등록 후 바로 시작할 수 있습니다.
-        </p>
-        <div>
-          <button
-            type="button"
-            onClick={requestSellerOnboarding}
-          >
-            판매자로 전환
-          </button>
-          <button
-            type="button"
-            onClick={requestSellerOnboarding}
-          >
-            판매자 정보 등록
-          </button>
-        </div>
-      </section>
+      <ProfileTabContent
+        tab={activeTab}
+        activity={activity}
+        pointBalance={Number(profile.pointBalance ?? activity.points)}
+        profile={authProfile ?? {}}
+        onPointChargeRef={(node) => {
+          if (!node || !shouldFocusCharge) return
+          node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          setShouldFocusCharge(false)
+        }}
+      />
 
       <ProfileEditModal
         isOpen={isEditOpen}

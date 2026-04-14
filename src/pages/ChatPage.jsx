@@ -1,7 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import useAuth from '../hooks/useAuth'
+import {
+  ensureChatRoom,
+  readChatMessages,
+  readChatRooms,
+  saveChatMessages,
+  saveChatRooms,
+} from '../lib/chat'
 
 function ChatPage() {
+  const location = useLocation()
   const { profile, user } = useAuth()
   const myNickname =
     profile?.nickname ??
@@ -13,65 +22,70 @@ function ChatPage() {
 
   const myAvatarUrl = profile?.avatar_url ?? ''
   const myAvatarText = myNickname.slice(0, 2).toUpperCase()
-  const rooms = [
-    {
-      id: 'room-1',
-      nickname: myNickname,
-      avatar: myAvatarText,
-      avatarUrl: myAvatarUrl,
+  const [rooms, setRooms] = useState(() =>
+    readChatRooms({
+      myNickname,
+      myAvatarText,
+      myAvatarUrl,
       role: profile?.role ?? '사용자',
-      isOnline: true,
-      lastMessage: '요청하신 수정사항 반영해서 오늘 8시에 전달드릴게요.',
-      time: '10:42',
-      unread: 2,
-    },
-    {
-      id: 'room-2',
-      nickname: '수현 디자이너',
-      avatar: 'SH',
-      role: '브랜드 디자인',
-      isOnline: false,
-      lastMessage: '브랜드 컬러 시안 3가지를 업로드했습니다.',
-      time: '어제',
-      unread: 0,
-    },
-    {
-      id: 'room-3',
-      nickname: '민규 라이프헬퍼',
-      avatar: 'MK',
-      role: '생활심부름',
-      isOnline: true,
-      lastMessage: '내일 오전 10시 방문 가능해요.',
-      time: '04/12',
-      unread: 1,
-    },
-  ]
-  const [selectedChat, setSelectedChat] = useState('room-1')
-  const messagesByRoom = {
-    'room-1': [
-      { type: 'date', text: '2026년 4월 13일' },
-      { type: 'other', text: '안녕하세요! 요청하신 작업 내용 확인했습니다.', time: '10:12' },
-      { type: 'system', text: '주문이 수락되었습니다. 진행 상태는 주문내역에서 확인할 수 있습니다.' },
-      { type: 'me', text: '좋습니다. 메인 섹션 카드 간격만 조금 더 넓혀주세요.', time: '10:31' },
-      { type: 'other', text: '네, 간격과 타이포 정리해서 1차 시안 공유드릴게요.', time: '10:42' },
-    ],
-    'room-2': [
-      { type: 'date', text: '2026년 4월 12일' },
-      { type: 'other', text: '브랜드 무드보드 먼저 공유드릴게요.', time: '09:45' },
-      { type: 'me', text: `${myNickname}입니다. 파스텔톤도 한 버전 부탁드려요.`, time: '09:52' },
-      { type: 'other', text: '좋아요. 파스텔 버전도 같이 준비할게요.', time: '10:05' },
-    ],
-    'room-3': [
-      { type: 'date', text: '2026년 4월 11일' },
-      { type: 'other', text: '내일 오전 10시 방문 가능합니다.', time: '20:10' },
-      { type: 'me', text: '확인했습니다. 주소는 주문서에 기입해둘게요.', time: '20:12' },
-    ],
-  }
-  const activeRoom = useMemo(
-    () => rooms.find((room) => room.id === selectedChat) ?? rooms[0],
-    [selectedChat],
+    }),
   )
-  const messages = messagesByRoom[activeRoom.id] ?? []
+  const [messagesByRoom, setMessagesByRoom] = useState(() => {
+    return readChatMessages({ myNickname })
+  })
+  const [selectedChat, setSelectedChat] = useState(() => {
+    const firstRoom = rooms[0]
+    return firstRoom?.id ?? 'room-1'
+  })
+
+  useEffect(() => {
+    saveChatRooms(rooms)
+  }, [rooms])
+
+  useEffect(() => {
+    saveChatMessages(messagesByRoom)
+  }, [messagesByRoom])
+
+  useEffect(() => {
+    const freshRooms = readChatRooms({
+      myNickname,
+      myAvatarText,
+      myAvatarUrl,
+      role: profile?.role ?? '사용자',
+    })
+    const startChat = location.state?.startChat
+    if (!startChat?.sellerUserId) return
+
+    const ensured = ensureChatRoom({
+      rooms: freshRooms,
+      messagesByRoom,
+      sellerUserId: startChat.sellerUserId,
+      sellerName: startChat.sellerName,
+      sellerAvatar: startChat.sellerAvatar,
+      sellerAvatarUrl: startChat.sellerAvatarUrl,
+      sellerRole: startChat.sellerRole ?? '판매자',
+      systemMessage: '판매자와의 채팅이 시작되었습니다.',
+      initialMessage: '안녕하세요, 문의드립니다.',
+    })
+    if (!ensured.created) {
+      setRooms(freshRooms)
+      setSelectedChat(ensured.roomId)
+      return
+    }
+    setRooms(ensured.rooms)
+    setMessagesByRoom(ensured.messagesByRoom)
+    setSelectedChat(ensured.roomId)
+  }, [location.state, messagesByRoom, myNickname, myAvatarText, myAvatarUrl, profile?.role])
+
+  useEffect(() => {
+    const roomId = location.state?.openRoomId
+    if (!roomId) return
+    const matchedRoom = rooms.find((room) => room.id === roomId)
+    if (matchedRoom) setSelectedChat(roomId)
+  }, [location.state, rooms])
+
+  const activeRoom = useMemo(() => rooms.find((room) => room.id === selectedChat) ?? rooms[0], [rooms, selectedChat])
+  const messages = activeRoom ? messagesByRoom[activeRoom.id] ?? [] : []
 
   return (
     <div className="page-stack">
@@ -94,7 +108,9 @@ function ChatPage() {
                 aria-pressed={room.id === selectedChat}
               >
                 <div className="chat-room-user">
-                  <div className="chat-room-avatar">{room.avatar}</div>
+                  <div className={`chat-room-avatar ${room.avatarUrl ? 'image' : ''}`}>
+                    {room.avatarUrl ? <img src={room.avatarUrl} alt={`${room.nickname} 프로필`} /> : room.avatar}
+                  </div>
                   <div>
                     <strong>{room.nickname}</strong>
                     <p>{room.lastMessage}</p>
@@ -110,6 +126,12 @@ function ChatPage() {
         </aside>
 
         <section className="main-card chat-conversation">
+          {!activeRoom ? (
+            <div className="chat-messages">
+              <p className="muted">아직 생성된 채팅방이 없습니다.</p>
+            </div>
+          ) : (
+            <>
           <header className="chat-header">
             <div className="chat-header-user">
               {activeRoom.avatarUrl ? (
@@ -170,6 +192,8 @@ function ChatPage() {
             />
             <button type="button">전송</button>
           </footer>
+            </>
+          )}
         </section>
       </section>
     </div>

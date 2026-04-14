@@ -11,6 +11,7 @@ import HomePage from './pages/HomePage'
 import OrdersPage from './pages/OrdersPage'
 import PointsPage from './pages/PointsPage'
 import ProfilePage from './pages/ProfilePage'
+import NotificationsPage from './pages/NotificationsPage'
 import SellerDashboardPage from './pages/SellerDashboardPage'
 import SellerDetailPage from './pages/SellerDetailPage'
 import SellersPage from './pages/SellersPage'
@@ -27,8 +28,10 @@ function App() {
 
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/chat" element={<ChatPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/points" element={<PointsPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/mypage" element={<ProfilePage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/seller-dashboard" element={<SellerDashboardPage />} />
       </Route>

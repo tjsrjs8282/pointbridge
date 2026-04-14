@@ -36,6 +36,16 @@ function TopBar({ onOpenMobileMenu }) {
     '사용자'
   const avatarText = displayName.slice(0, 1).toUpperCase()
   const avatarUrl = profile?.avatar_url ?? ''
+  const isSellerRegistered = Boolean(profile?.is_seller) || profile?.seller_status === 'active'
+  const sellerActionLabel = isSellerRegistered ? '판매 목록 편집' : '판매자 등록'
+  const handleSellerAction = () => {
+    setIsMenuOpen(false)
+    if (isSellerRegistered) {
+      navigate('/seller-dashboard')
+      return
+    }
+    requestSellerOnboarding()
+  }
 
   const handleLogout = async () => {
     try {
@@ -98,20 +108,37 @@ function TopBar({ onOpenMobileMenu }) {
           </div>
         ) : (
           <div className="topbar-actions">
-            <button type="button" className="topbar-icon-btn" aria-label="알림">
+            <button
+              type="button"
+              className="topbar-icon-btn"
+              aria-label="알림"
+              onClick={() =>
+                requireAuth({
+                  reason: '알림 확인은 로그인 후 이용할 수 있습니다.',
+                  onSuccess: () => navigate('/notifications'),
+                })
+              }
+            >
               <LineIcon>
                 <path d="M12 3a5 5 0 0 0-5 5v2.8c0 .7-.2 1.3-.6 1.9L5 15h14l-1.4-2.3c-.4-.6-.6-1.2-.6-1.9V8a5 5 0 0 0-5-5Z" />
                 <path d="M9.5 18a2.5 2.5 0 0 0 5 0" />
               </LineIcon>
             </button>
-            <button type="button" className="topbar-icon-btn" aria-label="메시지">
+            <button
+              type="button"
+              className="topbar-icon-btn"
+              aria-label="메시지"
+              onClick={() =>
+                requireAuth({
+                  reason: '채팅은 로그인 후 이용할 수 있습니다.',
+                  onSuccess: () => navigate('/chat'),
+                })
+              }
+            >
               <LineIcon>
                 <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7A2.5 2.5 0 0 1 17.5 16H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5v-7Z" />
               </LineIcon>
             </button>
-            <Link to="/points" className="topbar-point-chip">
-              12,450P
-            </Link>
 
             <div className="topbar-profile-wrap">
               <button
@@ -124,12 +151,6 @@ function TopBar({ onOpenMobileMenu }) {
               </button>
               {isMenuOpen ? (
                 <div className="topbar-dropdown">
-                  <Link to="/profile" onClick={() => setIsMenuOpen(false)}>
-                    내 프로필
-                  </Link>
-                  <Link to="/orders" onClick={() => setIsMenuOpen(false)}>
-                    주문내역
-                  </Link>
                   <Link to="/points" onClick={() => setIsMenuOpen(false)}>
                     포인트
                   </Link>
@@ -138,12 +159,10 @@ function TopBar({ onOpenMobileMenu }) {
                   </Link>
                   <button
                     type="button"
-                    onClick={() => {
-                      setIsMenuOpen(false)
-                      requestSellerOnboarding()
-                    }}
+                    className={!isSellerRegistered ? 'cta' : ''}
+                    onClick={handleSellerAction}
                   >
-                    판매자 등록
+                    {sellerActionLabel}
                   </button>
                   <button type="button" onClick={handleLogout} disabled={isSigningOut}>
                     {isSigningOut ? '로그아웃 중...' : '로그아웃'}

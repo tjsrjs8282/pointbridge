@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import SectionTitle from '../components/SectionTitle'
 import SellerCard from '../components/SellerCard'
-import { mockSellers } from '../data/mockSellers'
+import EmptyState from '../components/EmptyState'
+import { fetchSellers } from '../lib/marketplace'
 
 const categoryOptions = [
   { label: '전체', value: '전체' },
@@ -19,24 +20,43 @@ function SellersPage() {
   const [categoryFilter, setCategoryFilter] = useState('전체')
   const [regionFilter, setRegionFilter] = useState('전체')
   const [sortBy, setSortBy] = useState('rating')
+  const [sellers, setSellers] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState('')
 
-  const filteredSellers = useMemo(() => {
-    const filtered = mockSellers.filter((seller) => {
-      const categoryMatched =
-        categoryFilter === '전체' || seller.category === categoryFilter
-      const regionMatched = regionFilter === '전체' || seller.region === regionFilter
-      return categoryMatched && regionMatched
-    })
+  useEffect(() => {
+    let isMounted = true
+    setIsLoading(true)
+    setErrorMessage('')
 
-    return filtered.sort((a, b) => {
-      if (sortBy === 'rating') return b.rating - a.rating
-      if (sortBy === 'reviews') return b.reviewCount - a.reviewCount
-      if (sortBy === 'latest')
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      if (sortBy === 'price') return a.startPrice - b.startPrice
-      return 0
+    fetchSellers({
+      category: categoryFilter,
+      region: regionFilter,
+      sortBy,
     })
+      .then(({ data, error }) => {
+        if (!isMounted) return
+        if (error) {
+          setErrorMessage(error.message ?? '판매자 정보를 불러오지 못했습니다.')
+          setSellers([])
+          return
+        }
+        setSellers(data)
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false)
+      })
+
+    return () => {
+      isMounted = false
+    }
   }, [categoryFilter, regionFilter, sortBy])
+
+  const regionOptions = useMemo(() => {
+    const regionSet = new Set(['전체'])
+    sellers.forEach((seller) => regionSet.add(seller.region))
+    return Array.from(regionSet)
+  }, [sellers])
 
   return (
     <div className="page-stack">
@@ -70,11 +90,9 @@ function SellersPage() {
               value={regionFilter}
               onChange={(event) => setRegionFilter(event.target.value)}
             >
-              <option>전체</option>
-              <option>서울</option>
-              <option>경기</option>
-              <option>인천</option>
-              <option>부산</option>
+              {regionOptions.map((region) => (
+                <option key={region}>{region}</option>
+              ))}
             </select>
           </label>
 
@@ -90,10 +108,19 @@ function SellersPage() {
         </div>
       </section>
 
+      {errorMessage ? <p className="muted">{errorMessage}</p> : null}
+
       <section className="sellers-grid">
-        {filteredSellers.map((seller) => (
-          <SellerCard key={seller.id} seller={seller} />
-        ))}
+        {isLoading ? (
+          <p className="muted">판매자 정보를 불러오는 중입니다...</p>
+        ) : sellers.length === 0 ? (
+          <EmptyState
+            title="조건에 맞는 판매자가 없습니다"
+            description="필터를 바꾸거나 잠시 후 다시 시도해 주세요."
+          />
+        ) : (
+          sellers.map((seller) => <SellerCard key={seller.id} seller={seller} />)
+        )}
       </section>
     </div>
   )

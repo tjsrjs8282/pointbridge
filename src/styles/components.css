@@ -109,9 +109,14 @@
 
 .login-modal-card,
 .seller-modal-card,
-.profile-edit-modal,
 .order-modal-card {
-  max-height: min(86vh, 780px);
+  max-height: min(88vh, 820px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.profile-edit-modal {
+  max-height: min(88vh, 820px);
   overflow: hidden;
 }
 
