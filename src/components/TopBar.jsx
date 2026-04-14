@@ -1,5 +1,3 @@
-import { Link } from 'react-router-dom'
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useAuth from '../hooks/useAuth'
 
@@ -18,14 +16,9 @@ function TopBar({ onOpenMobileMenu }) {
     isInitializing,
     user,
     profile,
-    signOut,
     requireAuth,
-    requestSellerOnboarding,
     openAuthModal,
   } = useAuth()
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const [isSigningOut, setIsSigningOut] = useState(false)
-  const [logoutError, setLogoutError] = useState('')
   const displayName =
     profile?.nickname ??
     profile?.name ??
@@ -37,29 +30,74 @@ function TopBar({ onOpenMobileMenu }) {
   const avatarText = displayName.slice(0, 1).toUpperCase()
   const avatarUrl = profile?.avatar_url ?? ''
   const isSellerRegistered = Boolean(profile?.is_seller) || profile?.seller_status === 'active'
-  const sellerActionLabel = isSellerRegistered ? '판매 목록 편집' : '판매자 등록'
-  const handleSellerAction = () => {
-    setIsMenuOpen(false)
-    if (isSellerRegistered) {
-      navigate('/seller-dashboard')
+  const welcomeText = isSellerRegistered
+    ? `${displayName} 판매자님 환영합니다`
+    : `${displayName}님 환영합니다`
+
+  const navigateWithAuth = ({ to, reason }) => {
+    if (reason) {
+      requireAuth({
+        reason,
+        onSuccess: () => navigate(to),
+      })
       return
     }
-    requestSellerOnboarding()
+    navigate(to)
   }
 
-  const handleLogout = async () => {
-    try {
-      setIsSigningOut(true)
-      setLogoutError('')
-      await signOut()
-      setIsMenuOpen(false)
-      navigate('/', { replace: true })
-    } catch (error) {
-      setLogoutError(error?.message ?? '로그아웃 처리 중 문제가 발생했습니다.')
-    } finally {
-      setIsSigningOut(false)
-    }
-  }
+  const navItems = [
+    { key: 'home', label: '홈', to: '/', authReason: null, icon: <path d="M4 10.5 12 4l8 6.5V20H4v-9.5Z" /> },
+    {
+      key: 'seller-search',
+      label: '판매자 찾기',
+      to: '/seller-search',
+      authReason: null,
+      icon: (
+        <>
+          <circle cx="11" cy="11" r="6" />
+          <path d="m20 20-4.2-4.2" />
+        </>
+      ),
+    },
+    {
+      key: 'community',
+      label: '게시판',
+      to: '/community',
+      authReason: null,
+      icon: (
+        <>
+          <rect x="4" y="5" width="16" height="14" rx="2" />
+          <path d="M8 9h8M8 13h8M8 17h5" />
+        </>
+      ),
+    },
+    {
+      key: 'notifications',
+      label: '알림',
+      to: '/notifications',
+      authReason: '알림 확인은 로그인 후 이용할 수 있습니다.',
+      icon: (
+        <>
+          <path d="M12 3a5 5 0 0 0-5 5v2.8c0 .7-.2 1.3-.6 1.9L5 15h14l-1.4-2.3c-.4-.6-.6-1.2-.6-1.9V8a5 5 0 0 0-5-5Z" />
+          <path d="M9.5 18a2.5 2.5 0 0 0 5 0" />
+        </>
+      ),
+    },
+    {
+      key: 'chat',
+      label: '채팅',
+      to: '/chat',
+      authReason: '채팅은 로그인 후 이용할 수 있습니다.',
+      icon: <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7A2.5 2.5 0 0 1 17.5 16H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5v-7Z" />,
+    },
+    {
+      key: 'profile',
+      label: '프로필',
+      to: '/mypage',
+      authReason: '마이페이지는 로그인 후 이용할 수 있습니다.',
+      avatar: true,
+    },
+  ]
 
   return (
     <header className="topbar">
@@ -76,11 +114,8 @@ function TopBar({ onOpenMobileMenu }) {
       </div>
 
       <div className="topbar-right">
-        {isInitializing ? (
-          <div className="topbar-auth">
-            <span className="topbar-login-link">상태 확인 중...</span>
-          </div>
-        ) : !isLoggedIn ? (
+        {isInitializing ? <div className="topbar-auth"><span className="topbar-login-link">상태 확인 중...</span></div> : null}
+        {!isInitializing && !isLoggedIn ? (
           <div className="topbar-auth">
             <button
               type="button"
@@ -106,73 +141,29 @@ function TopBar({ onOpenMobileMenu }) {
               회원가입
             </button>
           </div>
-        ) : (
-          <div className="topbar-actions">
-            <button
-              type="button"
-              className="topbar-icon-btn"
-              aria-label="알림"
-              onClick={() =>
-                requireAuth({
-                  reason: '알림 확인은 로그인 후 이용할 수 있습니다.',
-                  onSuccess: () => navigate('/notifications'),
-                })
-              }
-            >
-              <LineIcon>
-                <path d="M12 3a5 5 0 0 0-5 5v2.8c0 .7-.2 1.3-.6 1.9L5 15h14l-1.4-2.3c-.4-.6-.6-1.2-.6-1.9V8a5 5 0 0 0-5-5Z" />
-                <path d="M9.5 18a2.5 2.5 0 0 0 5 0" />
-              </LineIcon>
-            </button>
-            <button
-              type="button"
-              className="topbar-icon-btn"
-              aria-label="메시지"
-              onClick={() =>
-                requireAuth({
-                  reason: '채팅은 로그인 후 이용할 수 있습니다.',
-                  onSuccess: () => navigate('/chat'),
-                })
-              }
-            >
-              <LineIcon>
-                <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7A2.5 2.5 0 0 1 17.5 16H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5v-7Z" />
-              </LineIcon>
-            </button>
+        ) : null}
 
-            <div className="topbar-profile-wrap">
+        {isLoggedIn ? <p className="topbar-welcome">{welcomeText}</p> : null}
+
+        <div className="topbar-actions">
+          {navItems.map((item) => (
+            <div key={item.key} className="topbar-icon-wrap">
               <button
                 type="button"
-                className="topbar-avatar-btn"
-                onClick={() => setIsMenuOpen((prev) => !prev)}
-                aria-expanded={isMenuOpen}
+                className={`topbar-icon-btn ${item.avatar ? 'profile' : ''}`}
+                aria-label={item.label}
+                onClick={() => navigateWithAuth({ to: item.to, reason: item.authReason })}
               >
-                {avatarUrl ? <img src={avatarUrl} alt="내 프로필 이미지" /> : avatarText}
+                {item.avatar ? (
+                  avatarUrl ? <img src={avatarUrl} alt="내 프로필 이미지" /> : avatarText
+                ) : (
+                  <LineIcon>{item.icon}</LineIcon>
+                )}
               </button>
-              {isMenuOpen ? (
-                <div className="topbar-dropdown">
-                  <Link to="/points" onClick={() => setIsMenuOpen(false)}>
-                    포인트
-                  </Link>
-                  <Link to="/settings" onClick={() => setIsMenuOpen(false)}>
-                    설정
-                  </Link>
-                  <button
-                    type="button"
-                    className={!isSellerRegistered ? 'cta' : ''}
-                    onClick={handleSellerAction}
-                  >
-                    {sellerActionLabel}
-                  </button>
-                  <button type="button" onClick={handleLogout} disabled={isSigningOut}>
-                    {isSigningOut ? '로그아웃 중...' : '로그아웃'}
-                  </button>
-                  {logoutError ? <small className="auth-error">{logoutError}</small> : null}
-                </div>
-              ) : null}
+              <span className="topbar-tooltip">{item.label}</span>
             </div>
-          </div>
-        )}
+          ))}
+        </div>
       </div>
     </header>
   )

@@ -3,7 +3,7 @@ import useAuth from '../hooks/useAuth'
 
 function RightPanel() {
   const navigate = useNavigate()
-  const { profile, user, requireAuth, requestSellerOnboarding } = useAuth()
+  const { profile, user, requireAuth, requestSellerOnboarding, signOut, isLoggedIn } = useAuth()
   const grade = 'Silver'
   const gradeMeta = {
     Bronze: { icon: 'B', label: 'Bronze' },
@@ -43,11 +43,22 @@ function RightPanel() {
       },
     })
   }
+  const handleLogout = async () => {
+    await signOut()
+    navigate('/', { replace: true })
+  }
 
   return (
     <aside className="right-panel">
       <section className="panel-card account-hub-card">
-        <p className="badge">내 계정 허브</p>
+        <div className="account-hub-head">
+          <p className="badge">내 계정 허브</p>
+          {isLoggedIn ? (
+            <button type="button" className="account-logout-btn" onClick={handleLogout}>
+              로그아웃
+            </button>
+          ) : null}
+        </div>
         <div className="right-profile-row">
           <div className="right-profile-avatar">
             {avatarUrl ? <img src={avatarUrl} alt="내 프로필 이미지" /> : avatarText}
@@ -114,6 +125,24 @@ function RightPanel() {
             goWithAuth({
               to: '/mypage?tab=points',
               reason: '포인트 이벤트 상세는 로그인 후 이용할 수 있습니다.',
+            })
+          }
+        >
+          이벤트 보기
+        </button>
+      </section>
+
+      <section className="panel-card account-event-banner">
+        <p className="badge">이벤트</p>
+        <h3>신규 판매자 등록 시 노출 부스트</h3>
+        <p>판매자 등록 후 첫 서비스 등록을 완료하면 추천 영역 노출 우선권이 적용됩니다.</p>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() =>
+            goWithAuth({
+              to: '/mypage?tab=sales',
+              reason: '이벤트 상세 확인은 로그인 후 이용할 수 있습니다.',
             })
           }
         >

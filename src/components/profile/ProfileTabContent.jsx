@@ -90,6 +90,15 @@ function ProfileTabContent({
     )
   }
 
+  if (tab === 'settings') {
+    return (
+      <section className="main-card">
+        <h2>설정</h2>
+        <p className="muted">알림, 테마, 계정 관련 설정은 이 탭에서 관리할 수 있도록 통합 중입니다.</p>
+      </section>
+    )
+  }
+
   if (tab === 'points') {
     return (
       <section className="main-card">

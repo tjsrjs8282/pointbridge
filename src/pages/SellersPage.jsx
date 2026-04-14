@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import SectionTitle from '../components/SectionTitle'
 import SellerCard from '../components/SellerCard'
 import EmptyState from '../components/EmptyState'
@@ -17,12 +17,21 @@ const categoryOptions = [
 
 function SellersPage() {
   const navigate = useNavigate()
-  const [categoryFilter, setCategoryFilter] = useState('전체')
+  const [searchParams] = useSearchParams()
+  const initialCategory = searchParams.get('category') ?? '전체'
+  const initialQuery = searchParams.get('q') ?? ''
+  const [categoryFilter, setCategoryFilter] = useState(initialCategory)
   const [regionFilter, setRegionFilter] = useState('전체')
   const [sortBy, setSortBy] = useState('rating')
   const [sellers, setSellers] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
+  const [query, setQuery] = useState(initialQuery)
+
+  useEffect(() => {
+    setCategoryFilter(searchParams.get('category') ?? '전체')
+    setQuery(searchParams.get('q') ?? '')
+  }, [searchParams])
 
   useEffect(() => {
     let isMounted = true
@@ -30,6 +39,7 @@ function SellersPage() {
     setErrorMessage('')
 
     fetchSellers({
+      keyword: query,
       category: categoryFilter,
       region: regionFilter,
       sortBy,
@@ -50,7 +60,7 @@ function SellersPage() {
     return () => {
       isMounted = false
     }
-  }, [categoryFilter, regionFilter, sortBy])
+  }, [categoryFilter, query, regionFilter, sortBy])
 
   const regionOptions = useMemo(() => {
     const regionSet = new Set(['전체'])
@@ -68,6 +78,15 @@ function SellersPage() {
 
       <section className="main-card sellers-filter-card">
         <SectionTitle title="필터" />
+        <label>
+          검색
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="판매자명/소개/카테고리 검색"
+          />
+        </label>
         <div className="sellers-category-tabs">
           {categoryOptions.map((category) => (
             <button
@@ -76,7 +95,7 @@ function SellersPage() {
               className={categoryFilter === category.value ? 'active' : ''}
               onClick={() => {
                 setCategoryFilter(category.value)
-                navigate('/sellers', { replace: true })
+                navigate('/seller-search', { replace: true })
               }}
             >
               {category.label}

@@ -52,6 +52,8 @@ function mapServiceRow(row) {
   return {
     id: row.id,
     sellerUserId: row.seller_user_id,
+    sellerProfileId: row.seller_profile_id ?? null,
+    sellerName: row.seller_name ?? '판매자',
     name: row.title,
     description: row.description ?? '',
     category: row.category ?? '기타',
@@ -195,63 +197,115 @@ export async function deactivateSellerProfile({ userId }) {
   return { data: { userId, deactivated: true }, error: null }
 }
 
-export async function fetchSellers({ category = '전체', region = '전체', sortBy = 'rating' } = {}) {
+export async function fetchSellers({
+  keyword = '',
+  category = '전체',
+  region = '전체',
+  sortBy = 'rating',
+} = {}) {
   if (!supabase) return { data: [], error: createNotConfiguredError() }
 
-  let query = supabase.from('seller_profiles').select('*').eq('is_active', true)
+  let sellers = []
+  let sellerError = null
 
-  if (category !== '전체') query = query.contains('categories', [category])
-  if (region !== '전체') query = query.eq('region', region)
+  let viewQuery = supabase.from('seller_search_view').select('*').eq('is_active', true)
+  if (category !== '전체') viewQuery = viewQuery.contains('categories', [category])
+  if (region !== '전체') viewQuery = viewQuery.eq('region', region)
+  const { data: viewRows, error: viewError } = await viewQuery
 
-  const { data: sellerProfiles, error: sellerError } = await query
-  if (sellerError) return { data: [], error: normalizeError(sellerError) }
+  if (!viewError && Array.isArray(viewRows)) {
+    sellers = viewRows.map(mapSellerRow)
+  } else {
+    sellerError = viewError
+    let query = supabase.from('seller_profiles').select('*').eq('is_active', true)
+    if (category !== '전체') query = query.contains('categories', [category])
+    if (region !== '전체') query = query.eq('region', region)
 
-  const sellerUserIds = (sellerProfiles ?? []).map((row) => row.user_id)
-  if (sellerUserIds.length === 0) return { data: [], error: null }
+    const { data: sellerProfiles, error } = await query
+    if (error) return { data: [], error: normalizeError(error) }
 
-  const [{ data: profileRows, error: profileError }, { data: serviceRows, error: serviceError }] =
-    await Promise.all([
-      supabase
-        .from('profiles')
-        .select('id, avatar_url, review_avg, review_count')
-        .in('id', sellerUserIds),
-      supabase
-        .from('services')
-        .select('seller_user_id, price_point')
-        .in('seller_user_id', sellerUserIds)
-        .eq('is_active', true),
-    ])
+    const sellerUserIds = (sellerProfiles ?? []).map((row) => row.user_id)
+    if (sellerUserIds.length === 0) return { data: [], error: null }
 
-  if (profileError) return { data: [], error: normalizeError(profileError) }
-  if (serviceError) return { data: [], error: normalizeError(serviceError) }
+    const [{ data: profileRows, error: profileError }, { data: serviceRows, error: serviceError }] =
+      await Promise.all([
+        supabase
+          .from('profiles')
+          .select('id, avatar_url, review_avg, review_count')
+          .in('id', sellerUserIds),
+        supabase
+          .from('services')
+          .select('seller_user_id, price_point')
+          .in('seller_user_id', sellerUserIds)
+          .eq('is_active', true),
+      ])
 
-  const profileMap = new Map((profileRows ?? []).map((row) => [row.id, row]))
-  const minPriceBySellerId = (serviceRows ?? []).reduce((acc, row) => {
-    const current = acc.get(row.seller_user_id)
-    const next = Number(row.price_point ?? 0)
-    if (!current || next < current) acc.set(row.seller_user_id, next)
-    return acc
-  }, new Map())
+    if (profileError) return { data: [], error: normalizeError(profileError) }
+    if (serviceError) return { data: [], error: normalizeError(serviceError) }
 
-  const sellers = (sellerProfiles ?? []).map((sellerProfile) => {
-    const sellerProfileMeta = profileMap.get(sellerProfile.user_id)
-    return mapSellerRow({
-      seller_profile_id: sellerProfile.id,
-      seller_user_id: sellerProfile.user_id,
-      display_name: sellerProfile.display_name,
-      intro: sellerProfile.intro,
-      region: sellerProfile.region,
-      categories: sellerProfile.categories,
-      is_active: sellerProfile.is_active,
-      response_time_avg: sellerProfile.response_time_avg,
-      total_completed_orders: sellerProfile.total_completed_orders,
-      avatar_url: sellerProfileMeta?.avatar_url,
-      review_avg: sellerProfileMeta?.review_avg,
-      review_count: sellerProfileMeta?.review_count,
-      created_at: sellerProfile.created_at,
-      start_price_point: minPriceBySellerId.get(sellerProfile.user_id) ?? 0,
+    const profileMap = new Map((profileRows ?? []).map((row) => [row.id, row]))
+    const minPriceBySellerId = (serviceRows ?? []).reduce((acc, row) => {
+      const current = acc.get(row.seller_user_id)
+      const next = Number(row.price_point ?? 0)
+      if (!current || next < current) acc.set(row.seller_user_id, next)
+      return acc
+    }, new Map())
+
+    sellers = (sellerProfiles ?? []).map((sellerProfile) => {
+      const sellerProfileMeta = profileMap.get(sellerProfile.user_id)
+      return mapSellerRow({
+        seller_profile_id: sellerProfile.id,
+        seller_user_id: sellerProfile.user_id,
+        display_name: sellerProfile.display_name,
+        intro: sellerProfile.intro,
+        region: sellerProfile.region,
+        categories: sellerProfile.categories,
+        is_active: sellerProfile.is_active,
+        response_time_avg: sellerProfile.response_time_avg,
+        total_completed_orders: sellerProfile.total_completed_orders,
+        avatar_url: sellerProfileMeta?.avatar_url,
+        review_avg: sellerProfileMeta?.review_avg,
+        review_count: sellerProfileMeta?.review_count,
+        created_at: sellerProfile.created_at,
+        start_price_point: minPriceBySellerId.get(sellerProfile.user_id) ?? 0,
+      })
     })
-  })
+  }
+
+  const normalizedKeyword = String(keyword ?? '').trim().toLowerCase()
+  if (normalizedKeyword) {
+    const sellerUserIds = sellers.map((item) => item.sellerUserId)
+    let matchedServiceSellerSet = new Set()
+    if (sellerUserIds.length > 0) {
+      const { data: matchedServices, error: serviceKeywordError } = await supabase
+        .from('services')
+        .select('seller_user_id, title, description')
+        .in('seller_user_id', sellerUserIds)
+        .eq('is_active', true)
+      if (!serviceKeywordError) {
+        matchedServiceSellerSet = new Set(
+          (matchedServices ?? [])
+            .filter(
+              (row) =>
+                String(row.title ?? '')
+                  .toLowerCase()
+                  .includes(normalizedKeyword) ||
+                String(row.description ?? '')
+                  .toLowerCase()
+                  .includes(normalizedKeyword),
+            )
+            .map((row) => row.seller_user_id),
+        )
+      }
+    }
+
+    sellers = sellers.filter((seller) => {
+      const sellerText = [seller.name, seller.intro, seller.category, ...(seller.categories ?? []), seller.region]
+        .join(' ')
+        .toLowerCase()
+      return sellerText.includes(normalizedKeyword) || matchedServiceSellerSet.has(seller.sellerUserId)
+    })
+  }
 
   sellers.sort((a, b) => {
     if (sortBy === 'reviews') return b.reviewCount - a.reviewCount
@@ -262,7 +316,7 @@ export async function fetchSellers({ category = '전체', region = '전체', sor
     return b.rating - a.rating
   })
 
-  return { data: sellers, error: null }
+  return { data: sellers, error: sellerError ? normalizeError(sellerError) : null }
 }
 
 export async function fetchSellerServicesByUserId(sellerUserId) {
@@ -512,4 +566,76 @@ export async function getBuyerCompletedOrdersWithoutReview({ buyerUserId, seller
   const reviewedOrderSet = new Set((reviews ?? []).map((item) => item.order_id))
   const availableOrders = (orders ?? []).filter((item) => !reviewedOrderSet.has(item.id))
   return { data: availableOrders, error: null }
+}
+
+export async function fetchHomeMarketplaceData() {
+  if (!supabase) return { data: null, error: createNotConfiguredError() }
+
+  const [recommendedResult, latestResult] = await Promise.all([
+    fetchSellers({ sortBy: 'rating' }),
+    supabase
+      .from('services')
+      .select('id, seller_user_id, title, description, category, price_point, created_at')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(18),
+  ])
+
+  if (recommendedResult.error) return { data: null, error: recommendedResult.error }
+  if (latestResult.error) return { data: null, error: normalizeError(latestResult.error) }
+
+  const recentRows = latestResult.data ?? []
+  const sellerIds = Array.from(new Set(recentRows.map((row) => row.seller_user_id)))
+  let sellerProfileMap = new Map()
+  let profileMap = new Map()
+
+  if (sellerIds.length > 0) {
+    const [{ data: sellerProfiles, error: sellerProfilesError }, { data: profiles, error: profilesError }] =
+      await Promise.all([
+        supabase
+          .from('seller_profiles')
+          .select('id, user_id, display_name, total_completed_orders, is_active')
+          .in('user_id', sellerIds),
+        supabase
+          .from('profiles')
+          .select('id, avatar_url, review_avg, review_count')
+          .in('id', sellerIds),
+      ])
+
+    if (sellerProfilesError) return { data: null, error: normalizeError(sellerProfilesError) }
+    if (profilesError) return { data: null, error: normalizeError(profilesError) }
+    sellerProfileMap = new Map((sellerProfiles ?? []).map((row) => [row.user_id, row]))
+    profileMap = new Map((profiles ?? []).map((row) => [row.id, row]))
+  }
+
+  const mappedServices = recentRows
+    .map((row) => {
+      const sellerProfile = sellerProfileMap.get(row.seller_user_id)
+      if (!sellerProfile?.is_active) return null
+      return mapServiceRow({
+        ...row,
+        seller_profile_id: sellerProfile?.id ?? null,
+        seller_name: sellerProfile?.display_name ?? '판매자',
+      })
+    })
+    .filter(Boolean)
+
+  const popularServices = [...mappedServices]
+    .sort((a, b) => {
+      const aProfile = profileMap.get(a.sellerUserId)
+      const bProfile = profileMap.get(b.sellerUserId)
+      const aScore = Number(aProfile?.review_avg ?? 0) * 10 + Number(aProfile?.review_count ?? 0)
+      const bScore = Number(bProfile?.review_avg ?? 0) * 10 + Number(bProfile?.review_count ?? 0)
+      return bScore - aScore
+    })
+    .slice(0, 4)
+
+  return {
+    data: {
+      recommendedSellers: (recommendedResult.data ?? []).slice(0, 3),
+      popularServices,
+      recentServices: mappedServices.slice(0, 6),
+    },
+    error: null,
+  }
 }

@@ -3,12 +3,11 @@ import useAuth from '../hooks/useAuth'
 
 const baseMenus = [
   { to: '/', label: '홈', icon: '🏠' },
-  { to: '/sellers', label: '판매자 찾기', icon: '🔎' },
-  { to: '/chat', label: '채팅', requiresAuth: true, icon: '💬' },
-  { to: '/settings', label: '설정', requiresAuth: true, icon: '⚙️' },
+  { to: '/seller-search', label: '판매자 찾기', icon: '🔎' },
+  { to: '/community', label: '게시판', icon: '📝' },
 ]
 
-function Sidebar({ isSellerMode, isCollapsed, onToggleCollapse }) {
+function Sidebar({ isCollapsed, onToggleCollapse }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { requireAuth } = useAuth()
@@ -62,23 +61,6 @@ function Sidebar({ isSellerMode, isCollapsed, onToggleCollapse }) {
             </NavLink>
           ),
         )}
-        {isSellerMode ? (
-          <button
-            type="button"
-            className={`sidebar-link seller ${location.pathname === '/seller-dashboard' ? 'active' : ''}`.trim()}
-            onClick={() =>
-              handleProtectedNavigate({
-                to: '/seller-dashboard',
-                label: '판매관리',
-                icon: '🧰',
-              })
-            }
-            aria-label="판매관리"
-            title="판매관리"
-          >
-            {renderMenuContent({ label: '판매관리', icon: '🧰' })}
-          </button>
-        ) : null}
       </nav>
       <div className="sidebar-footer">
         <button

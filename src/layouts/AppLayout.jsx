@@ -3,29 +3,23 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import LoginModal from '../components/LoginModal'
 import RightPanel from '../components/RightPanel'
 import SellerOnboardingModal from '../components/SellerOnboardingModal'
-import Sidebar from '../components/Sidebar'
 import TopBar from '../components/TopBar'
+import AppFooter from '../components/AppFooter'
 import useAuth from '../hooks/useAuth'
 
 const mobileMenus = [
   { to: '/', label: '홈', icon: '🏠' },
-  { to: '/sellers', label: '판매자 찾기', icon: '🔎' },
+  { to: '/seller-search', label: '판매자 찾기', icon: '🔎' },
+  { to: '/community', label: '게시판', icon: '📝' },
+  { to: '/notifications', label: '알림', requiresAuth: true, icon: '🔔' },
   { to: '/chat', label: '채팅', requiresAuth: true, icon: '💬' },
   { to: '/mypage?tab=activity', label: '마이페이지', requiresAuth: true, icon: '👤' },
-  { to: '/settings', label: '설정', requiresAuth: true, icon: '⚙️' },
 ]
 
-function AppLayout({ isSellerMode = false }) {
+function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem('sidebar') === 'collapsed'
-    } catch {
-      return false
-    }
-  })
   const { requireAuth, signOut, profile, user, isLoggedIn, requestSellerOnboarding } = useAuth()
 
   const nickname =
@@ -41,25 +35,9 @@ function AppLayout({ isSellerMode = false }) {
   const isSellerRegistered = Boolean(profile?.is_seller) || profile?.seller_status === 'active'
   const sellerCtaLabel = isSellerRegistered ? '판매 목록 편집' : '판매자 등록'
 
-  const mobileMenuItems = useMemo(() => {
-    const seller = isSellerMode
-      ? [{ to: '/seller-dashboard', label: '판매관리', requiresAuth: true, icon: '🧰' }]
-      : []
-    return [...mobileMenus, ...seller]
-  }, [isSellerMode])
+  const mobileMenuItems = useMemo(() => mobileMenus, [])
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false)
-  const toggleSidebarCollapse = () => {
-    setIsSidebarCollapsed((prev) => {
-      const next = !prev
-      try {
-        localStorage.setItem('sidebar', next ? 'collapsed' : 'expanded')
-      } catch {
-        // Ignore storage write failure
-      }
-      return next
-    })
-  }
 
   const handleMobileMenuClick = (menu) => {
     if (menu.requiresAuth) {
@@ -83,16 +61,12 @@ function AppLayout({ isSellerMode = false }) {
   }
 
   return (
-    <main className={`app-shell ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-      <Sidebar
-        isSellerMode={isSellerMode}
-        isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={toggleSidebarCollapse}
-      />
+    <main className="app-shell">
       <section className="content-panel">
         <TopBar onOpenMobileMenu={() => setIsMobileMenuOpen(true)} />
         <div className="content-scroll-area">
           <Outlet />
+          <AppFooter />
         </div>
       </section>
       <RightPanel />

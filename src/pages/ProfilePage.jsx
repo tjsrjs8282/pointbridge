@@ -21,6 +21,7 @@ const profileTabs = [
   { key: 'wishlist', label: '찜/관심' },
   { key: 'sales', label: '판매 서비스' },
   { key: 'points', label: '포인트' },
+  { key: 'settings', label: '설정' },
 ]
 
 function ProfilePage() {
