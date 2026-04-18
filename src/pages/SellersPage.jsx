@@ -1,42 +1,47 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import SectionLoader from '../components/common/SectionLoader'
 import SectionTitle from '../components/SectionTitle'
 import SellerCard from '../components/SellerCard'
 import EmptyState from '../components/EmptyState'
+import {
+  ALL_CATEGORY_VALUE,
+  CATEGORY_SELECT_OPTIONS,
+  normalizeCategoryFilter,
+} from '../constants/marketplaceTaxonomy'
+import useAuth from '../hooks/useAuth'
+import { fetchFavoritesByUser, toggleFavorite } from '../lib/favorites'
 import { fetchSellers } from '../lib/marketplace'
-
-const categoryOptions = [
-  { label: '전체', value: '전체' },
-  { label: '웹/앱 개발', value: '개발' },
-  { label: '그래픽 디자인', value: '디자인' },
-  { label: '영상 편집', value: '영상 편집' },
-  { label: '생활서비스', value: '생활심부름' },
-  { label: '청소', value: '청소' },
-  { label: '설치/수리', value: '설치/수리' },
-]
 
 function SellersPage() {
   const navigate = useNavigate()
+  const { user, requireAuth } = useAuth()
   const [searchParams] = useSearchParams()
-  const initialCategory = searchParams.get('category') ?? '전체'
+  const initialCategory = normalizeCategoryFilter(searchParams.get('category'))
   const initialQuery = searchParams.get('q') ?? ''
   const [categoryFilter, setCategoryFilter] = useState(initialCategory)
-  const [regionFilter, setRegionFilter] = useState('전체')
+  const [regionFilter, setRegionFilter] = useState(ALL_CATEGORY_VALUE)
   const [sortBy, setSortBy] = useState('rating')
   const [sellers, setSellers] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
   const [query, setQuery] = useState(initialQuery)
+  const [favoriteSellerIds, setFavoriteSellerIds] = useState([])
 
   useEffect(() => {
-    setCategoryFilter(searchParams.get('category') ?? '전체')
-    setQuery(searchParams.get('q') ?? '')
+    queueMicrotask(() => {
+      setCategoryFilter(normalizeCategoryFilter(searchParams.get('category')))
+      setQuery(searchParams.get('q') ?? '')
+    })
   }, [searchParams])
 
   useEffect(() => {
     let isMounted = true
-    setIsLoading(true)
-    setErrorMessage('')
+    queueMicrotask(() => {
+      if (!isMounted) return
+      setIsLoading(true)
+      setErrorMessage('')
+    })
 
     fetchSellers({
       keyword: query,
@@ -62,24 +67,68 @@ function SellersPage() {
     }
   }, [categoryFilter, query, regionFilter, sortBy])
 
+  useEffect(() => {
+    let mounted = true
+    if (!user?.id) {
+      queueMicrotask(() => {
+        if (mounted) setFavoriteSellerIds([])
+      })
+      return undefined
+    }
+    fetchFavoritesByUser({ userId: user.id }).then(({ data, error }) => {
+      if (!mounted || error) return
+      setFavoriteSellerIds(
+        (data ?? [])
+          .filter((item) => item.targetType === 'seller')
+          .map((item) => String(item.targetId)),
+      )
+    })
+    return () => {
+      mounted = false
+    }
+  }, [user?.id])
+
+  const handleToggleFavorite = (seller) => {
+    requireAuth({
+      reason: '판매자 찜은 로그인 후 이용할 수 있습니다.',
+      onSuccess: async () => {
+        const { data, error } = await toggleFavorite({
+          userId: user.id,
+          targetType: 'seller',
+          targetId: String(seller.id),
+        })
+        if (error) {
+          setErrorMessage(error.message ?? '찜 처리 중 오류가 발생했습니다.')
+          return
+        }
+        setFavoriteSellerIds((prev) =>
+          data?.isFavorite
+            ? Array.from(new Set([...prev, String(seller.id)]))
+            : prev.filter((id) => id !== String(seller.id)),
+        )
+      },
+    })
+  }
+
   const regionOptions = useMemo(() => {
-    const regionSet = new Set(['전체'])
+    const regionSet = new Set([ALL_CATEGORY_VALUE])
     sellers.forEach((seller) => regionSet.add(seller.region))
     return Array.from(regionSet)
   }, [sellers])
 
   return (
     <div className="page-stack">
-      <section className="main-card hero-card">
-        <p className="badge">판매자 찾기</p>
+      <section className="main-card hero-card hero-card--tight">
         <h1>판매자 찾기</h1>
         <p>평점, 응답속도, 전문 분야를 비교해 바로 의뢰할 수 있습니다.</p>
       </section>
 
       <section className="main-card sellers-filter-card">
-        <SectionTitle title="필터" />
-        <label>
-          검색
+        <div className="sellers-filter-head">
+          <SectionTitle title="필터" />
+        </div>
+        <label className="sellers-search-field">
+          <span>검색</span>
           <input
             type="text"
             value={query}
@@ -88,14 +137,17 @@ function SellersPage() {
           />
         </label>
         <div className="sellers-category-tabs">
-          {categoryOptions.map((category) => (
+          {CATEGORY_SELECT_OPTIONS.map((category) => (
             <button
-              key={category.label}
+              key={category.value}
               type="button"
               className={categoryFilter === category.value ? 'active' : ''}
               onClick={() => {
                 setCategoryFilter(category.value)
-                navigate('/seller-search', { replace: true })
+                const params = new URLSearchParams()
+                if (category.value !== ALL_CATEGORY_VALUE) params.set('category', category.value)
+                if (query.trim()) params.set('q', query.trim())
+                navigate(`/seller-search?${params.toString()}`, { replace: true })
               }}
             >
               {category.label}
@@ -129,17 +181,27 @@ function SellersPage() {
 
       {errorMessage ? <p className="muted">{errorMessage}</p> : null}
 
+      {isLoading ? <SectionLoader label="판매자 정보 불러오는 중" /> : null}
+
       <section className="sellers-grid">
-        {isLoading ? (
-          <p className="muted">판매자 정보를 불러오는 중입니다...</p>
-        ) : sellers.length === 0 ? (
-          <EmptyState
-            title="조건에 맞는 판매자가 없습니다"
-            description="필터를 바꾸거나 잠시 후 다시 시도해 주세요."
-          />
-        ) : (
-          sellers.map((seller) => <SellerCard key={seller.id} seller={seller} />)
-        )}
+        {!isLoading && sellers.length === 0 ? (
+          <div className="sellers-empty-wrap">
+            <EmptyState
+              title="조건에 맞는 판매자가 없습니다"
+              description="필터를 바꾸거나 잠시 후 다시 시도해 주세요."
+            />
+          </div>
+        ) : !isLoading ? (
+          sellers.map((seller) => (
+            <SellerCard
+              key={seller.id}
+              seller={seller}
+              canFavorite={Boolean(user?.id)}
+              isFavorite={favoriteSellerIds.includes(String(seller.id))}
+              onToggleFavorite={handleToggleFavorite}
+            />
+          ))
+        ) : null}
       </section>
     </div>
   )

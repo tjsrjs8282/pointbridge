@@ -1,15 +1,23 @@
 import SectionTitle from '../SectionTitle'
 import ServiceCard from '../ServiceCard'
+import HorizontalCarousel from '../common/HorizontalCarousel'
 
-function HomeServiceSection({ title, services = [], onSelectService }) {
+function HomeServiceSection({ title, services = [], onSelectService, canAdminManage = false, onAdminDeleteService }) {
   return (
     <section className="main-card">
       <SectionTitle title={title} />
-      <div className="seller-service-list">
+      <HorizontalCarousel ariaLabel={title}>
         {services.map((service) => (
-          <ServiceCard key={service.id} service={service} onOrder={() => onSelectService(service)} />
+          <div key={service.id} className="carousel-item service">
+            <ServiceCard
+              service={service}
+              onOrder={() => onSelectService(service)}
+              canAdminManage={canAdminManage}
+              onAdminDelete={onAdminDeleteService}
+            />
+          </div>
         ))}
-      </div>
+      </HorizontalCarousel>
     </section>
   )
 }

@@ -166,32 +166,32 @@ returns trigger
 language plpgsql
 as $$
 declare
-  v_order record;
+  ord_row record;
   v_bad_words text[] := array['씨발', '병신', '개새끼', '좆', 'fuck', 'shit'];
   v_word text;
 begin
   select o.*
-  into v_order
+  into ord_row
   from public.orders o
   where o.id = new.order_id;
 
-  if v_order.id is null then
+  if ord_row.id is null then
     raise exception 'Order not found for review.';
   end if;
 
-  if v_order.status <> 'completed' then
+  if ord_row.status <> 'completed' then
     raise exception 'Review can be written only for completed orders.';
   end if;
 
-  if v_order.buyer_user_id <> new.buyer_user_id then
+  if ord_row.buyer_user_id <> new.buyer_user_id then
     raise exception 'Only the buyer can write this review.';
   end if;
 
-  if v_order.seller_user_id <> new.seller_user_id then
+  if ord_row.seller_user_id <> new.seller_user_id then
     raise exception 'Review seller mismatch.';
   end if;
 
-  if v_order.service_id <> new.service_id then
+  if ord_row.service_id <> new.service_id then
     raise exception 'Review service mismatch.';
   end if;
 
@@ -265,60 +265,60 @@ security definer
 set search_path = public
 as $$
 declare
-  v_order public.orders;
+  ord_row record;
   v_buyer_balance integer;
 begin
   select *
-  into v_order
+  into ord_row
   from public.orders
   where id = p_order_id
   for update;
 
-  if v_order.id is null then
+  if ord_row.id is null then
     raise exception 'Order not found.';
   end if;
 
-  if v_order.status <> 'requested' then
+  if ord_row.status <> 'requested' then
     raise exception 'Only requested order can be processed.';
   end if;
 
   if p_decision = 'accept' then
     select point_balance into v_buyer_balance
     from public.profiles
-    where id = v_order.buyer_user_id
+    where id = ord_row.buyer_user_id
     for update;
 
-    if coalesce(v_buyer_balance, 0) < v_order.price_point then
+    if coalesce(v_buyer_balance, 0) < ord_row.price_point then
       raise exception 'Buyer has insufficient points.';
     end if;
 
     update public.profiles
-    set point_balance = point_balance - v_order.price_point
-    where id = v_order.buyer_user_id;
+    set point_balance = point_balance - ord_row.price_point
+    where id = ord_row.buyer_user_id;
 
     insert into public.point_transactions (user_id, order_id, type, amount, description)
     values (
-      v_order.buyer_user_id,
-      v_order.id,
+      ord_row.buyer_user_id,
+      ord_row.id,
       'debit',
-      v_order.price_point,
+      ord_row.price_point,
       '주문 수락으로 인한 포인트 차감'
     );
 
     update public.orders
     set status = 'accepted', accepted_at = now()
-    where id = v_order.id
-    returning * into v_order;
+    where id = ord_row.id
+    returning * into ord_row;
   elsif p_decision = 'reject' then
     update public.orders
     set status = 'rejected', rejected_at = now()
-    where id = v_order.id
-    returning * into v_order;
+    where id = ord_row.id
+    returning * into ord_row;
   else
     raise exception 'Decision must be accept or reject.';
   end if;
 
-  return v_order;
+  return (select o from public.orders o where o.id = p_order_id limit 1);
 end;
 $$;
 
@@ -332,49 +332,49 @@ security definer
 set search_path = public
 as $$
 declare
-  v_order public.orders;
+  ord_row record;
 begin
   select *
-  into v_order
+  into ord_row
   from public.orders
   where id = p_order_id
   for update;
 
-  if v_order.id is null then
+  if ord_row.id is null then
     raise exception 'Order not found.';
   end if;
 
-  if v_order.status not in ('accepted', 'in_progress') then
+  if ord_row.status not in ('accepted', 'in_progress') then
     raise exception 'Only accepted/in_progress order can be completed.';
   end if;
 
   update public.profiles
-  set point_balance = point_balance + v_order.price_point
-  where id = v_order.seller_user_id;
+  set point_balance = point_balance + ord_row.price_point
+  where id = ord_row.seller_user_id;
 
   insert into public.point_transactions (user_id, order_id, type, amount, description)
   values (
-    v_order.seller_user_id,
-    v_order.id,
+    ord_row.seller_user_id,
+    ord_row.id,
     'credit',
-    v_order.price_point,
+    ord_row.price_point,
     '주문 완료에 따른 판매자 포인트 적립'
   );
 
   update public.orders
   set status = 'completed', completed_at = now()
-  where id = v_order.id
-  returning * into v_order;
+  where id = ord_row.id
+  returning * into ord_row;
 
   update public.seller_profiles
   set total_completed_orders = (
     select count(*)::int
     from public.orders
-    where seller_user_id = v_order.seller_user_id and status = 'completed'
+    where seller_user_id = ord_row.seller_user_id and status = 'completed'
   )
-  where user_id = v_order.seller_user_id;
+  where user_id = ord_row.seller_user_id;
 
-  return v_order;
+  return (select o from public.orders o where o.id = p_order_id limit 1);
 end;
 $$;
 

@@ -1,7 +1,8 @@
 import { supabase } from './supabase'
+import { prepareImageFileForUpload } from './imageUpload'
+import { validateNickname } from './userProfileRules'
 
 const AVATAR_BUCKET = 'avatars'
-const MAX_AVATAR_FILE_SIZE = 5 * 1024 * 1024
 
 function createNotConfiguredError() {
   return {
@@ -60,6 +61,21 @@ export async function createUserProfile({
   createdAt,
 }) {
   if (!supabase) return { data: null, error: createNotConfiguredError() }
+  if (typeof nickname === 'string' && nickname.trim()) {
+    const nicknameValidation = validateNickname(nickname)
+    if (!nicknameValidation.ok) {
+      return {
+        data: null,
+        error: {
+          message: nicknameValidation.message,
+          code: nicknameValidation.code,
+          status: 400,
+          details: null,
+          hint: null,
+        },
+      }
+    }
+  }
 
   try {
     const payload = {
@@ -133,38 +149,33 @@ export async function uploadProfileAvatar({ userId, file }) {
   }
 
   try {
-    const fileType = String(file.type ?? '').toLowerCase()
-    const extension = String(file.name?.split('.').pop() ?? '').toLowerCase()
-    const isJpg = fileType === 'image/jpeg' || extension === 'jpg' || extension === 'jpeg'
+    const { file: optimizedFile, error: imageError } = await prepareImageFileForUpload(file, {
+      maxSizeBytes: 1 * 1024 * 1024,
+      allowedExtensions: ['jpg', 'jpeg'],
+      maxWidth: 1600,
+      maxHeight: 1600,
+      quality: 0.86,
+    })
+    if (imageError || !optimizedFile) {
+      return {
+        data: null,
+        error: {
+          message: imageError?.message ?? '프로필 이미지를 처리할 수 없습니다.',
+          code: imageError?.code ?? 'AVATAR_IMAGE_INVALID',
+          status: 400,
+        },
+      }
+    }
+
+    const fileType = String(optimizedFile.type ?? '').toLowerCase()
+    const extension = String(optimizedFile.name?.split('.').pop() ?? '').toLowerCase()
     const isPng = fileType === 'image/png' || extension === 'png'
     const isWebp = fileType === 'image/webp' || extension === 'webp'
-    if (!isJpg && !isPng && !isWebp) {
-      return {
-        data: null,
-        error: {
-          message: '프로필 이미지는 JPG, PNG, WEBP 파일만 업로드할 수 있습니다.',
-          code: 'INVALID_IMAGE_TYPE',
-          status: 400,
-        },
-      }
-    }
-
-    if (Number(file.size ?? 0) > MAX_AVATAR_FILE_SIZE) {
-      return {
-        data: null,
-        error: {
-          message: '프로필 이미지는 5MB 이하만 업로드할 수 있습니다.',
-          code: 'FILE_TOO_LARGE',
-          status: 400,
-        },
-      }
-    }
-
     const normalizedExtension = isWebp ? 'webp' : isPng ? 'png' : 'jpg'
     const filePath = `${userId}_${Date.now()}.${normalizedExtension}`
     const { error: uploadError } = await supabase.storage
       .from(AVATAR_BUCKET)
-      .upload(filePath, file, {
+      .upload(filePath, optimizedFile, {
         cacheControl: '3600',
         upsert: true,
       })

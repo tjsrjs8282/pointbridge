@@ -52,8 +52,12 @@ export async function signOutUser() {
   if (!supabase) return { data: null, error: createNotConfiguredError() }
 
   try {
-    const { error } = await supabase.auth.signOut()
-    return { data: { signedOut: !error }, error: normalizeError(error) }
+    const local = await supabase.auth.signOut({ scope: 'local' })
+    if (!local.error) {
+      return { data: { signedOut: true }, error: null }
+    }
+    const global = await supabase.auth.signOut()
+    return { data: { signedOut: !global.error }, error: normalizeError(global.error ?? local.error) }
   } catch (error) {
     return { data: null, error: normalizeError(error) }
   }

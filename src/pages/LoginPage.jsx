@@ -2,6 +2,15 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import useAuth from '../hooks/useAuth'
 
+const DEV_ADMIN_LOGIN_ID = 'admin'
+
+function canUseDevAdminAlias() {
+  if (import.meta.env.DEV) return true
+  if (typeof window === 'undefined') return false
+  const host = String(window.location?.hostname ?? '').toLowerCase()
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+}
+
 function LoginPage() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -19,7 +28,9 @@ function LoginPage() {
   const validate = () => {
     const nextErrors = {}
     if (!form.email.trim()) nextErrors.email = '이메일을 입력해 주세요.'
-    if (!form.email.includes('@')) nextErrors.email = '올바른 이메일 형식이 아닙니다.'
+    const isDevAdminAlias =
+      canUseDevAdminAlias() && String(form.email ?? '').trim().toLowerCase() === DEV_ADMIN_LOGIN_ID
+    if (!form.email.includes('@') && !isDevAdminAlias) nextErrors.email = '올바른 이메일 형식이 아닙니다.'
     if (!form.password) nextErrors.password = '비밀번호를 입력해 주세요.'
     return nextErrors
   }
@@ -52,10 +63,10 @@ function LoginPage() {
 
       <form className="auth-form" onSubmit={handleSubmit}>
         <label>
-          이메일
+          이메일 ({canUseDevAdminAlias() ? '로컬 실행에서는 admin 입력 가능' : '이메일 형식으로 입력'})
           <input
-            type="email"
-            placeholder="you@example.com"
+            type="text"
+            placeholder={canUseDevAdminAlias() ? 'you@example.com 또는 admin' : 'you@example.com'}
             value={form.email}
             onChange={(event) =>
               setForm((prev) => ({ ...prev, email: event.target.value }))

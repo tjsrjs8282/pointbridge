@@ -1,39 +1,51 @@
 function CommunityPostList({
   posts = [],
   isLoading,
-  selectedPostId,
-  onSelectPost,
+  onOpenPost,
   onStartWrite,
+  minHeightClassName = '',
 }) {
   return (
-    <aside className="main-card community-post-list">
+    <section className={`main-card community-post-list ${minHeightClassName}`.trim()}>
       <div className="community-head-row">
         <h2>게시글 목록</h2>
-        <button type="button" className="btn-secondary" onClick={onStartWrite}>
+        <button type="button" className="btn-primary" onClick={onStartWrite}>
           글쓰기
         </button>
       </div>
       {isLoading ? (
         <p className="muted">게시글을 불러오는 중입니다...</p>
       ) : posts.length === 0 ? (
-        <p className="muted">등록된 게시글이 없습니다.</p>
+        <div className="community-empty-state">
+          <p>게시글이 존재하지 않습니다.</p>
+        </div>
       ) : (
-        <div className="community-post-items">
+        <div className="community-post-items board">
           {posts.map((post) => (
             <button
               key={post.id}
               type="button"
-              className={`community-post-item ${selectedPostId === post.id ? 'active' : ''}`}
-              onClick={() => onSelectPost(post.id)}
+              className="community-post-item board-row"
+              onClick={() => onOpenPost(post.id)}
             >
               <strong>{post.title}</strong>
-              <p>{post.isSecret ? '비밀글' : post.contentText ?? post.content}</p>
-              <span>{post.authorName}</span>
+              <span className="community-author-cell">
+                <span className="community-author-avatar">
+                  {post.authorAvatarUrl ? (
+                    <img src={post.authorAvatarUrl} alt={`${post.authorName} 프로필`} className="profile-avatar-image" />
+                  ) : (
+                    String(post.authorName ?? 'U').slice(0, 1)
+                  )}
+                </span>
+                {post.authorName}
+              </span>
+              <span>{post.createdAt ? String(post.createdAt).slice(0, 10) : '-'}</span>
+              <span>{Number(post.commentCount ?? 0)}</span>
             </button>
           ))}
         </div>
       )}
-    </aside>
+    </section>
   )
 }
 

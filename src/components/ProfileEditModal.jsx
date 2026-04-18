@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import useAuth from '../hooks/useAuth'
 import { openKakaoPostcode } from '../lib/postcode'
 import { supabase } from '../lib/supabase'
+import { NICKNAME_MAX_LENGTH, validateNickname } from '../lib/userProfileRules'
 
 function formatPhoneNumber(value) {
   const digits = String(value ?? '').replace(/\D/g, '').slice(0, 11)
@@ -11,12 +12,13 @@ function formatPhoneNumber(value) {
 }
 
 const INTEREST_CATEGORY_OPTIONS = [
-  '개발',
   '디자인',
-  '생활심부름',
-  '청소',
+  'IT프로그래밍',
+  '영상/음향',
+  '마케팅',
+  '언어/번역',
   '설치/수리',
-  '기타 전문작업',
+  '생활서비스',
 ]
 
 function parseInterests(value) {
@@ -85,8 +87,9 @@ function ProfileEditModal({ isOpen, onClose, onSaved }) {
       return
     }
 
-    if (!editForm.nickname.trim()) {
-      setSaveError('닉네임을 입력해 주세요.')
+    const nicknameValidation = validateNickname(editForm.nickname)
+    if (!nicknameValidation.ok) {
+      setSaveError(nicknameValidation.message)
       return
     }
 
@@ -94,7 +97,7 @@ function ProfileEditModal({ isOpen, onClose, onSaved }) {
       setIsSaving(true)
       setSaveError('')
       const updatePayload = {
-        nickname: editForm.nickname,
+        nickname: editForm.nickname.trim(),
         bio: editForm.bio,
         phone: formatPhoneNumber(editForm.phone),
         address: editForm.address,
@@ -143,7 +146,7 @@ function ProfileEditModal({ isOpen, onClose, onSaved }) {
     <div className="profile-edit-overlay" role="presentation">
       <section className="profile-edit-modal" role="dialog" aria-modal="true">
         <div className="profile-edit-head">
-          <h2>내 프로필 편집</h2>
+          <h2>내 정보 수정</h2>
           <button type="button" onClick={onClose}>
             ×
           </button>
@@ -170,6 +173,7 @@ function ProfileEditModal({ isOpen, onClose, onSaved }) {
                 <input
                   type="text"
                   value={editForm.nickname}
+                  maxLength={NICKNAME_MAX_LENGTH}
                   onChange={(event) =>
                     setEditForm((prev) => ({ ...prev, nickname: event.target.value }))
                   }

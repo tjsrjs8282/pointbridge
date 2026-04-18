@@ -1,4 +1,14 @@
 import { supabase } from './supabase'
+import {
+  ALL_CATEGORY_VALUE,
+  normalizeCategoryFilter,
+  normalizeMarketplaceCategory,
+  normalizeMarketplaceCategoryList,
+} from '../constants/marketplaceTaxonomy'
+import {
+  mergeSellerProfileExtrasWithMock,
+  saveSellerProfileExtrasByUserId,
+} from './sellerProfileExtras'
 
 const BAD_WORDS = ['씨발', '병신', '개새끼', '좆', 'fuck', 'shit']
 
@@ -21,6 +31,21 @@ function normalizeError(error) {
   }
 }
 
+function isMissingColumnError(error) {
+  const code = String(error?.code ?? '').toUpperCase()
+  return code === '42703' || code === 'PGRST204'
+}
+
+function normalizeSellerProfileOptionalPayload(extraProfile) {
+  if (!extraProfile) return null
+  return {
+    specialties: Array.isArray(extraProfile.specialties) ? extraProfile.specialties : [],
+    skills: Array.isArray(extraProfile.skills) ? extraProfile.skills : [],
+    careers: Array.isArray(extraProfile.careers) ? extraProfile.careers : [],
+    certificates: Array.isArray(extraProfile.certificates) ? extraProfile.certificates : [],
+  }
+}
+
 function toInitials(value) {
   if (!value) return 'PB'
   const chunks = String(value).trim().split(/\s+/).slice(0, 2)
@@ -28,16 +53,27 @@ function toInitials(value) {
 }
 
 function mapSellerRow(row) {
+  const categories = normalizeMarketplaceCategoryList(row.categories ?? [])
+  const category = categories[0] ?? normalizeMarketplaceCategory(row.category ?? '', '기타')
+  const extras = mergeSellerProfileExtrasWithMock({
+    sellerUserId: row.seller_user_id,
+    category,
+    rawExtras: row,
+  })
+
   return {
     id: row.seller_profile_id,
     sellerUserId: row.seller_user_id,
     name: row.display_name ?? '판매자',
-    category: row.categories?.[0] ?? '기타',
-    categories: row.categories ?? [],
+    category,
+    categories,
     intro: row.intro ?? '',
+    tagline: extras.tagline ?? '',
     rating: Number(row.review_avg ?? 0),
     reviewCount: Number(row.review_count ?? 0),
     startPrice: Number(row.start_price_point ?? 0),
+    minPrice: Number(row.min_price_point ?? row.start_price_point ?? 0),
+    maxPrice: Number(row.max_price_point ?? row.start_price_point ?? 0),
     region: row.region ?? '미지정',
     avatar: toInitials(row.display_name),
     avatarUrl: row.avatar_url ?? '',
@@ -45,10 +81,16 @@ function mapSellerRow(row) {
     avgResponse: row.response_time_avg ? `${row.response_time_avg}분` : '-',
     totalWorks: Number(row.total_completed_orders ?? 0),
     createdAt: row.created_at ?? null,
+    extras,
   }
 }
 
 function mapServiceRow(row) {
+  const metadata = row.options ?? {}
+  const additionalImages = Array.isArray(metadata.additional_images)
+    ? metadata.additional_images.filter(Boolean)
+    : []
+  const tags = Array.isArray(metadata.tags) ? metadata.tags.filter(Boolean) : []
   return {
     id: row.id,
     sellerUserId: row.seller_user_id,
@@ -56,9 +98,13 @@ function mapServiceRow(row) {
     sellerName: row.seller_name ?? '판매자',
     name: row.title,
     description: row.description ?? '',
-    category: row.category ?? '기타',
+    category: normalizeMarketplaceCategory(row.category ?? '', '기타'),
     price: Number(row.price_point ?? 0),
     option: '기본',
+    detailContent: metadata.detail_content ?? row.description ?? '',
+    thumbnailUrl: row.thumbnail_url ?? metadata.thumbnail_url ?? '',
+    imageUrls: additionalImages,
+    tags,
     createdAt: row.created_at ?? null,
   }
 }
@@ -68,6 +114,8 @@ function mapReviewRow(row) {
     id: row.id,
     sellerId: row.seller_user_id,
     user: row.buyer_name ?? '구매자',
+    userAvatarUrl: row.buyer_avatar_url ?? '',
+    userAvatar: toInitials(row.buyer_name ?? '구매자'),
     text: row.content ?? '',
     score: Number(row.rating ?? 0),
     createdAt: row.created_at ?? null,
@@ -86,6 +134,7 @@ export async function registerSellerProfile({
   region,
   categories = [],
   isActive = true,
+  extraProfile = null,
 }) {
   if (!supabase) return { data: null, error: createNotConfiguredError() }
 
@@ -100,7 +149,7 @@ export async function registerSellerProfile({
     display_name: displayName,
     intro: intro ?? '',
     region: region ?? '',
-    categories,
+    categories: normalizeMarketplaceCategoryList(categories),
     is_active: isActive,
   }
 
@@ -116,32 +165,83 @@ export async function registerSellerProfile({
     .select('*')
     .single()
 
-  return { data, error: normalizeError(error) }
+  if (error) return { data: null, error: normalizeError(error) }
+
+  const optionalPayload = normalizeSellerProfileOptionalPayload(extraProfile)
+  if (optionalPayload) {
+    saveSellerProfileExtrasByUserId({
+      userId,
+      extras: optionalPayload,
+    })
+  }
+  if (optionalPayload) {
+    // TODO(DB): seller_profiles 확장 컬럼 도입 시 optional payload를 정식 저장한다.
+    const { error: optionalError } = await supabase
+      .from('seller_profiles')
+      .update(optionalPayload)
+      .eq('user_id', userId)
+    if (optionalError && !isMissingColumnError(optionalError)) {
+      return { data: null, error: normalizeError(optionalError) }
+    }
+  }
+
+  return { data, error: null }
 }
 
 export async function createSellerService({
   sellerUserId,
   title,
   description,
+  detailContent = '',
   category,
   pricePoint,
+  thumbnailUrl = '',
+  additionalImageUrls = [],
+  tags = [],
 }) {
   if (!supabase) return { data: null, error: createNotConfiguredError() }
 
-  const { data, error } = await supabase
+  const normalizedTags = Array.isArray(tags)
+    ? Array.from(new Set(tags.map((tag) => String(tag).trim()).filter(Boolean))).slice(0, 12)
+    : []
+  const normalizedAdditionalImages = Array.isArray(additionalImageUrls)
+    ? additionalImageUrls.map((url) => String(url).trim()).filter(Boolean).slice(0, 8)
+    : []
+
+  const richPayload = {
+    seller_user_id: sellerUserId,
+    title,
+    description: description ?? '',
+    category: normalizeMarketplaceCategory(category, category),
+    price_point: pricePoint,
+    is_active: true,
+    thumbnail_url: thumbnailUrl || null,
+    options: {
+      detail_content: detailContent ?? '',
+      additional_images: normalizedAdditionalImages,
+      tags: normalizedTags,
+    },
+  }
+  const richResult = await supabase.from('services').insert(richPayload).select('*').single()
+  if (!richResult.error) return { data: richResult.data, error: null }
+
+  if (!isMissingColumnError(richResult.error)) {
+    return { data: null, error: normalizeError(richResult.error) }
+  }
+
+  const basicResult = await supabase
     .from('services')
     .insert({
       seller_user_id: sellerUserId,
       title,
       description: description ?? '',
-      category,
+      category: normalizeMarketplaceCategory(category, category),
       price_point: pricePoint,
       is_active: true,
     })
     .select('*')
     .single()
-
-  return { data, error: normalizeError(error) }
+  return { data: basicResult.data, error: normalizeError(basicResult.error) }
 }
 
 export async function deactivateSellerProfile({ userId }) {
@@ -199,8 +299,8 @@ export async function deactivateSellerProfile({ userId }) {
 
 export async function fetchSellers({
   keyword = '',
-  category = '전체',
-  region = '전체',
+  category = ALL_CATEGORY_VALUE,
+  region = ALL_CATEGORY_VALUE,
   sortBy = 'rating',
 } = {}) {
   if (!supabase) return { data: [], error: createNotConfiguredError() }
@@ -208,9 +308,9 @@ export async function fetchSellers({
   let sellers = []
   let sellerError = null
 
+  const normalizedCategoryFilter = normalizeCategoryFilter(category)
   let viewQuery = supabase.from('seller_search_view').select('*').eq('is_active', true)
-  if (category !== '전체') viewQuery = viewQuery.contains('categories', [category])
-  if (region !== '전체') viewQuery = viewQuery.eq('region', region)
+  if (region !== ALL_CATEGORY_VALUE) viewQuery = viewQuery.eq('region', region)
   const { data: viewRows, error: viewError } = await viewQuery
 
   if (!viewError && Array.isArray(viewRows)) {
@@ -218,8 +318,7 @@ export async function fetchSellers({
   } else {
     sellerError = viewError
     let query = supabase.from('seller_profiles').select('*').eq('is_active', true)
-    if (category !== '전체') query = query.contains('categories', [category])
-    if (region !== '전체') query = query.eq('region', region)
+    if (region !== ALL_CATEGORY_VALUE) query = query.eq('region', region)
 
     const { data: sellerProfiles, error } = await query
     if (error) return { data: [], error: normalizeError(error) }
@@ -244,10 +343,14 @@ export async function fetchSellers({
     if (serviceError) return { data: [], error: normalizeError(serviceError) }
 
     const profileMap = new Map((profileRows ?? []).map((row) => [row.id, row]))
-    const minPriceBySellerId = (serviceRows ?? []).reduce((acc, row) => {
-      const current = acc.get(row.seller_user_id)
+    const priceRangeBySellerId = (serviceRows ?? []).reduce((acc, row) => {
+      const current = acc.get(row.seller_user_id) ?? { min: 0, max: 0 }
       const next = Number(row.price_point ?? 0)
-      if (!current || next < current) acc.set(row.seller_user_id, next)
+      const nextRange = {
+        min: current.min === 0 ? next : Math.min(current.min, next),
+        max: Math.max(current.max, next),
+      }
+      acc.set(row.seller_user_id, nextRange)
       return acc
     }, new Map())
 
@@ -267,9 +370,21 @@ export async function fetchSellers({
         review_avg: sellerProfileMeta?.review_avg,
         review_count: sellerProfileMeta?.review_count,
         created_at: sellerProfile.created_at,
-        start_price_point: minPriceBySellerId.get(sellerProfile.user_id) ?? 0,
+        start_price_point: priceRangeBySellerId.get(sellerProfile.user_id)?.min ?? 0,
+        min_price_point: priceRangeBySellerId.get(sellerProfile.user_id)?.min ?? 0,
+        max_price_point: priceRangeBySellerId.get(sellerProfile.user_id)?.max ?? 0,
       })
     })
+  }
+
+  if (normalizedCategoryFilter !== ALL_CATEGORY_VALUE) {
+    sellers = sellers.filter((seller) =>
+      (seller.categories ?? []).some(
+        (item) =>
+          normalizeMarketplaceCategory(item, '') ===
+          normalizeMarketplaceCategory(normalizedCategoryFilter, ''),
+      ),
+    )
   }
 
   const normalizedKeyword = String(keyword ?? '').trim().toLowerCase()
@@ -319,6 +434,63 @@ export async function fetchSellers({
   return { data: sellers, error: sellerError ? normalizeError(sellerError) : null }
 }
 
+export async function fetchSellersByProfileIds(profileIds = []) {
+  if (!supabase) return { data: [], error: createNotConfiguredError() }
+  const normalizedIds = Array.from(new Set((profileIds ?? []).filter(Boolean)))
+  if (normalizedIds.length === 0) return { data: [], error: null }
+
+  const { data: sellerRows, error: sellerRowsError } = await supabase
+    .from('seller_profiles')
+    .select('id, user_id, display_name, intro, region, categories, is_active, created_at')
+    .in('id', normalizedIds)
+    .eq('is_active', true)
+  if (sellerRowsError) return { data: [], error: normalizeError(sellerRowsError) }
+
+  const userIds = Array.from(new Set((sellerRows ?? []).map((row) => row.user_id).filter(Boolean)))
+  const { data: profileRows, error: profileRowsError } = await supabase
+    .from('profiles')
+    .select('id, nickname, name, avatar_url, review_avg, review_count')
+    .in('id', userIds)
+  if (profileRowsError) return { data: [], error: normalizeError(profileRowsError) }
+  const profileMap = new Map((profileRows ?? []).map((row) => [row.id, row]))
+
+  const mapped = (sellerRows ?? [])
+    .map((row) => mapSellerRow({ ...row, ...profileMap.get(row.user_id) }))
+    .sort((a, b) => normalizedIds.indexOf(a.id) - normalizedIds.indexOf(b.id))
+  return { data: mapped, error: null }
+}
+
+export async function fetchServicesByIds(serviceIds = []) {
+  if (!supabase) return { data: [], error: createNotConfiguredError() }
+  const normalizedIds = Array.from(new Set((serviceIds ?? []).filter(Boolean)))
+  if (normalizedIds.length === 0) return { data: [], error: null }
+
+  const { data: serviceRows, error: serviceRowsError } = await supabase
+    .from('services')
+    .select('id, seller_user_id, seller_profile_id, title, description, category, price_point, tags, thumbnail_url, created_at')
+    .in('id', normalizedIds)
+    .eq('is_active', true)
+  if (serviceRowsError) return { data: [], error: normalizeError(serviceRowsError) }
+
+  const sellerUserIds = Array.from(new Set((serviceRows ?? []).map((row) => row.seller_user_id).filter(Boolean)))
+  const { data: profileRows, error: profileRowsError } = await supabase
+    .from('profiles')
+    .select('id, nickname, name')
+    .in('id', sellerUserIds)
+  if (profileRowsError) return { data: [], error: normalizeError(profileRowsError) }
+  const profileMap = new Map((profileRows ?? []).map((row) => [row.id, row]))
+
+  const mapped = (serviceRows ?? [])
+    .map((row) =>
+      mapServiceRow({
+        ...row,
+        seller_name: profileMap.get(row.seller_user_id)?.nickname ?? profileMap.get(row.seller_user_id)?.name,
+      }),
+    )
+    .sort((a, b) => normalizedIds.indexOf(a.id) - normalizedIds.indexOf(b.id))
+  return { data: mapped, error: null }
+}
+
 export async function fetchSellerServicesByUserId(sellerUserId) {
   if (!supabase) return { data: [], error: createNotConfiguredError() }
   if (!sellerUserId) {
@@ -340,6 +512,103 @@ export async function fetchSellerServicesByUserId(sellerUserId) {
 
   if (error) return { data: [], error: normalizeError(error) }
   return { data: (data ?? []).map(mapServiceRow), error: null }
+}
+
+export async function fetchSellerProfileIdByUserId(userId) {
+  if (!supabase) return { data: null, error: createNotConfiguredError() }
+  if (!userId) {
+    return {
+      data: null,
+      error: {
+        code: 'MISSING_USER_ID',
+        message: '사용자 ID가 필요합니다.',
+      },
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('seller_profiles')
+    .select('id')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) return { data: null, error: normalizeError(error) }
+  return { data: data?.id ?? null, error: null }
+}
+
+export async function fetchServiceDetailById(serviceId) {
+  if (!supabase) return { data: null, error: createNotConfiguredError() }
+  if (!serviceId) {
+    return {
+      data: null,
+      error: {
+        code: 'MISSING_SERVICE_ID',
+        message: '서비스 ID가 필요합니다.',
+      },
+    }
+  }
+
+  const { data: serviceRow, error: serviceError } = await supabase
+    .from('services')
+    .select('*')
+    .eq('id', serviceId)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (serviceError) return { data: null, error: normalizeError(serviceError) }
+  if (!serviceRow) {
+    return {
+      data: null,
+      error: {
+        code: 'SERVICE_NOT_FOUND',
+        message: '서비스를 찾을 수 없습니다.',
+      },
+    }
+  }
+
+  const [{ data: sellerProfile, error: sellerError }, { data: profile, error: profileError }] =
+    await Promise.all([
+      supabase
+        .from('seller_profiles')
+        .select('id, user_id, display_name, intro, region, categories, is_active')
+        .eq('user_id', serviceRow.seller_user_id)
+        .maybeSingle(),
+      supabase
+        .from('profiles')
+        .select('id, avatar_url, review_avg, review_count')
+        .eq('id', serviceRow.seller_user_id)
+        .maybeSingle(),
+    ])
+
+  if (sellerError) return { data: null, error: normalizeError(sellerError) }
+  if (profileError) return { data: null, error: normalizeError(profileError) }
+
+  const service = mapServiceRow({
+    ...serviceRow,
+    seller_name: sellerProfile?.display_name ?? '판매자',
+  })
+  const seller = sellerProfile
+    ? mapSellerRow({
+        seller_profile_id: sellerProfile.id,
+        seller_user_id: sellerProfile.user_id,
+        display_name: sellerProfile.display_name,
+        intro: sellerProfile.intro ?? '',
+        region: sellerProfile.region ?? '',
+        categories: sellerProfile.categories ?? [],
+        is_active: sellerProfile.is_active ?? true,
+        avatar_url: profile?.avatar_url ?? '',
+        review_avg: profile?.review_avg ?? 0,
+        review_count: profile?.review_count ?? 0,
+        start_price_point: service.price,
+      })
+    : null
+
+  return {
+    data: {
+      service,
+      seller,
+    },
+    error: null,
+  }
 }
 
 export async function fetchSellerDetailByProfileId(sellerProfileId) {
@@ -390,11 +659,17 @@ export async function fetchSellerDetailByProfileId(sellerProfileId) {
   if (buyerUserIds.length > 0) {
     const { data: buyerProfiles, error: buyerProfilesError } = await supabase
       .from('profiles')
-      .select('id, nickname, name')
+      .select('id, nickname, name, avatar_url')
       .in('id', buyerUserIds)
     if (buyerProfilesError) return { data: null, error: normalizeError(buyerProfilesError) }
     buyerNameMap = new Map(
-      (buyerProfiles ?? []).map((row) => [row.id, row.nickname ?? row.name ?? '구매자']),
+      (buyerProfiles ?? []).map((row) => [
+        row.id,
+        {
+          name: row.nickname ?? row.name ?? '구매자',
+          avatarUrl: row.avatar_url ?? '',
+        },
+      ]),
     )
   }
 
@@ -413,6 +688,10 @@ export async function fetchSellerDetailByProfileId(sellerProfileId) {
     review_count: sellerProfileMeta?.review_count,
     start_price_point: 0,
     created_at: sellerProfile.created_at,
+    specialties: sellerProfile.specialties,
+    skills: sellerProfile.skills,
+    careers: sellerProfile.careers,
+    certificates: sellerProfile.certificates,
   })
 
   const mappedServices = (services ?? []).map(mapServiceRow)
@@ -420,11 +699,14 @@ export async function fetchSellerDetailByProfileId(sellerProfileId) {
     if (!min) return item.price
     return Math.min(min, item.price)
   }, 0)
+  seller.minPrice = seller.startPrice
+  seller.maxPrice = mappedServices.reduce((max, item) => Math.max(max, item.price), 0)
 
   const mappedReviews = (reviews ?? []).map((review) =>
     mapReviewRow({
       ...review,
-      buyer_name: buyerNameMap.get(review.buyer_user_id),
+      buyer_name: buyerNameMap.get(review.buyer_user_id)?.name,
+      buyer_avatar_url: buyerNameMap.get(review.buyer_user_id)?.avatarUrl ?? '',
     }),
   )
 
@@ -455,7 +737,7 @@ export async function createOrderRequest({
       buyer_user_id: buyerUserId,
       seller_user_id: sellerUserId,
       service_id: serviceId,
-      category,
+      category: normalizeMarketplaceCategory(category, category),
       title_snapshot: titleSnapshot,
       price_point: pricePoint,
       request_message: requestMessage ?? '',
@@ -571,41 +853,33 @@ export async function getBuyerCompletedOrdersWithoutReview({ buyerUserId, seller
 export async function fetchHomeMarketplaceData() {
   if (!supabase) return { data: null, error: createNotConfiguredError() }
 
-  const [recommendedResult, latestResult] = await Promise.all([
+  const [recommendedResult, newSellerResult, latestResult] = await Promise.all([
     fetchSellers({ sortBy: 'rating' }),
+    fetchSellers({ sortBy: 'latest' }),
     supabase
       .from('services')
       .select('id, seller_user_id, title, description, category, price_point, created_at')
       .eq('is_active', true)
       .order('created_at', { ascending: false })
-      .limit(18),
+      .limit(36),
   ])
 
   if (recommendedResult.error) return { data: null, error: recommendedResult.error }
+  if (newSellerResult.error) return { data: null, error: newSellerResult.error }
   if (latestResult.error) return { data: null, error: normalizeError(latestResult.error) }
 
   const recentRows = latestResult.data ?? []
   const sellerIds = Array.from(new Set(recentRows.map((row) => row.seller_user_id)))
   let sellerProfileMap = new Map()
-  let profileMap = new Map()
 
   if (sellerIds.length > 0) {
-    const [{ data: sellerProfiles, error: sellerProfilesError }, { data: profiles, error: profilesError }] =
-      await Promise.all([
-        supabase
-          .from('seller_profiles')
-          .select('id, user_id, display_name, total_completed_orders, is_active')
-          .in('user_id', sellerIds),
-        supabase
-          .from('profiles')
-          .select('id, avatar_url, review_avg, review_count')
-          .in('id', sellerIds),
-      ])
+    const { data: sellerProfiles, error: sellerProfilesError } = await supabase
+      .from('seller_profiles')
+      .select('id, user_id, display_name, total_completed_orders, is_active')
+      .in('user_id', sellerIds)
 
     if (sellerProfilesError) return { data: null, error: normalizeError(sellerProfilesError) }
-    if (profilesError) return { data: null, error: normalizeError(profilesError) }
     sellerProfileMap = new Map((sellerProfiles ?? []).map((row) => [row.user_id, row]))
-    profileMap = new Map((profiles ?? []).map((row) => [row.id, row]))
   }
 
   const mappedServices = recentRows
@@ -620,21 +894,48 @@ export async function fetchHomeMarketplaceData() {
     })
     .filter(Boolean)
 
+  const serviceIds = mappedServices.map((service) => service.id)
+  let usageCountByServiceId = new Map()
+  if (serviceIds.length > 0) {
+    const { data: orderRows, error: orderError } = await supabase
+      .from('orders')
+      .select('service_id, status')
+      .in('service_id', serviceIds)
+    if (orderError && !isMissingColumnError(orderError)) {
+      return { data: null, error: normalizeError(orderError) }
+    }
+    usageCountByServiceId = (orderRows ?? []).reduce((acc, row) => {
+      const serviceId = row.service_id
+      if (!serviceId) return acc
+      const prev = acc.get(serviceId) ?? { completed: 0, total: 0 }
+      const next = {
+        completed: prev.completed + (row.status === 'completed' ? 1 : 0),
+        total: prev.total + 1,
+      }
+      acc.set(serviceId, next)
+      return acc
+    }, new Map())
+  }
+
   const popularServices = [...mappedServices]
-    .sort((a, b) => {
-      const aProfile = profileMap.get(a.sellerUserId)
-      const bProfile = profileMap.get(b.sellerUserId)
-      const aScore = Number(aProfile?.review_avg ?? 0) * 10 + Number(aProfile?.review_count ?? 0)
-      const bScore = Number(bProfile?.review_avg ?? 0) * 10 + Number(bProfile?.review_count ?? 0)
-      return bScore - aScore
+    .map((service) => {
+      const usage = usageCountByServiceId.get(service.id) ?? { completed: 0, total: 0 }
+      return {
+        ...service,
+        usageCount: usage.completed > 0 ? usage.completed : usage.total,
+      }
     })
-    .slice(0, 4)
+    .sort((a, b) => {
+      if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount
+      return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
+    })
+    .slice(0, 6)
 
   return {
     data: {
-      recommendedSellers: (recommendedResult.data ?? []).slice(0, 3),
+      recommendedSellers: (recommendedResult.data ?? []).slice(0, 6),
+      newSellers: (newSellerResult.data ?? []).slice(0, 6),
       popularServices,
-      recentServices: mappedServices.slice(0, 6),
     },
     error: null,
   }

@@ -202,43 +202,43 @@ security definer
 set search_path = public
 as $$
 declare
-  v_order public.orders;
+  ord_row record;
   v_buyer_balance integer;
 begin
   select *
-  into v_order
+  into ord_row
   from public.orders
   where id = p_order_id
   for update;
 
-  if v_order.id is null then
+  if ord_row.id is null then
     raise exception 'Order not found.';
   end if;
 
-  if v_order.status <> 'pending' then
+  if ord_row.status <> 'pending' then
     raise exception 'Only pending order can be processed.';
   end if;
 
   if p_decision = 'accept' then
     select point_balance into v_buyer_balance
     from public.profiles
-    where id = v_order.buyer_user_id
+    where id = ord_row.buyer_user_id
     for update;
 
-    if coalesce(v_buyer_balance, 0) < v_order.price_point then
+    if coalesce(v_buyer_balance, 0) < ord_row.price_point then
       raise exception 'Buyer has insufficient points.';
     end if;
 
     update public.profiles
-    set point_balance = point_balance - v_order.price_point
-    where id = v_order.buyer_user_id;
+    set point_balance = point_balance - ord_row.price_point
+    where id = ord_row.buyer_user_id;
 
     insert into public.point_transactions (user_id, order_id, type, amount, description, status)
     values (
-      v_order.buyer_user_id,
-      v_order.id,
+      ord_row.buyer_user_id,
+      ord_row.id,
       'use',
-      v_order.price_point,
+      ord_row.price_point,
       '주문 수락으로 인한 포인트 사용',
       'done'
     );
@@ -247,8 +247,8 @@ begin
     set status = 'accepted',
         accepted_at = now(),
         updated_at = now()
-    where id = v_order.id
-    returning * into v_order;
+    where id = ord_row.id
+    returning * into ord_row;
   elsif p_decision = 'reject' then
     update public.orders
     set status = 'rejected',
@@ -256,12 +256,12 @@ begin
         rejection_reason_code = p_rejection_reason_code,
         rejection_reason_text = p_rejection_reason_text,
         updated_at = now()
-    where id = v_order.id
-    returning * into v_order;
+    where id = ord_row.id
+    returning * into ord_row;
   else
     raise exception 'Decision must be accept or reject.';
   end if;
 
-  return v_order;
+  return (select o from public.orders o where o.id = p_order_id limit 1);
 end;
 $$;

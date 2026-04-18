@@ -56,8 +56,7 @@ function SettingsPage() {
   if (settingsLoading) {
     return (
       <div className="page-stack">
-        <section className="main-card hero-card">
-          <p className="badge">설정</p>
+        <section className="main-card hero-card hero-card--tight">
           <h1>앱 설정</h1>
           <p>설정을 불러오는 중입니다...</p>
         </section>
@@ -69,8 +68,7 @@ function SettingsPage() {
 
   return (
     <div className="page-stack">
-      <section className="main-card hero-card">
-        <p className="badge">설정</p>
+      <section className="main-card hero-card hero-card--tight">
         <h1>앱 설정</h1>
         <p>테마, 알림, 화면 표시를 내 사용 방식에 맞게 조정할 수 있습니다.</p>
       </section>

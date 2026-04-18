@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import SectionTitle from '../components/SectionTitle'
-import ServiceCard from '../components/ServiceCard'
 import SecondaryButton from '../components/SecondaryButton'
+import ConfirmModal from '../components/common/ConfirmModal'
+import EmptyStateCard from '../components/common/EmptyStateCard'
+import SectionLoader from '../components/common/SectionLoader'
+import ReviewSection from '../components/seller/ReviewSection'
+import SellerProfileHeader from '../components/seller/SellerProfileHeader'
+import SellerProfileMetaCompact from '../components/seller/SellerProfileMetaCompact'
+import SellerServicesSection from '../components/seller/SellerServicesSection'
+import ServiceCreateModal from '../components/seller/ServiceCreateModal'
 import useAuth from '../hooks/useAuth'
+import { fetchFavoritesByUser, toggleFavorite } from '../lib/favorites'
 import {
   createOrderRequest,
   createReview,
@@ -11,7 +18,8 @@ import {
   fetchSellerDetailByProfileId,
   getBuyerCompletedOrdersWithoutReview,
 } from '../lib/marketplace'
-import { pushServiceRequestNotification } from '../lib/notifications'
+import { pushChatRequestNotification, pushServiceRequestNotification } from '../lib/notifications'
+import { canManageSellerProfile, isAdminProfile } from '../lib/permissions'
 
 const optionMultipliers = {
   기본: 1,
@@ -24,7 +32,7 @@ function SellerDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
-  const { requireAuth, user, profile, refreshProfile, updateProfile } = useAuth()
+  const { requireAuth, user, profile, refreshProfile, updateProfile, requestSellerOnboarding } = useAuth()
   const pointBalance = Number(profile?.point_balance ?? 0)
   const [seller, setSeller] = useState(null)
   const [sellerServices, setSellerServices] = useState([])
@@ -47,6 +55,9 @@ function SellerDetailPage() {
   const [reviewStatusMessage, setReviewStatusMessage] = useState('')
   const [isReviewSubmitting, setIsReviewSubmitting] = useState(false)
   const [isDeletingSellerProfile, setIsDeletingSellerProfile] = useState(false)
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false)
+  const [isServiceCreateOpen, setIsServiceCreateOpen] = useState(false)
+  const [isFavoriteSeller, setIsFavoriteSeller] = useState(false)
 
   const totalPoints = useMemo(() => {
     if (!selectedService) return 0
@@ -55,7 +66,14 @@ function SellerDetailPage() {
   }, [selectedOption, selectedService])
 
   const hasEnoughPoints = pointBalance >= totalPoints
-  const isMineSellerProfile = Boolean(user?.id && seller?.sellerUserId && user.id === seller.sellerUserId)
+  const isAdmin = isAdminProfile(profile)
+  const canManageSeller = canManageSellerProfile({
+    profile,
+    currentUserId: user?.id,
+    sellerUserId: seller?.sellerUserId,
+  })
+  const isOwnerView = canManageSeller
+  const isVisitorView = !canManageSeller && Boolean(user?.id)
 
   const loadSellerDetail = async () => {
     setIsDetailLoading(true)
@@ -108,6 +126,25 @@ function SellerDetailPage() {
     })
   }, [user?.id, seller?.sellerUserId])
 
+  useEffect(() => {
+    let mounted = true
+    if (!user?.id || !seller?.id) {
+      setIsFavoriteSeller(false)
+      return undefined
+    }
+    fetchFavoritesByUser({ userId: user.id }).then(({ data, error }) => {
+      if (!mounted || error) return
+      setIsFavoriteSeller(
+        (data ?? []).some(
+          (item) => item.targetType === 'seller' && String(item.targetId) === String(seller.id),
+        ),
+      )
+    })
+    return () => {
+      mounted = false
+    }
+  }, [user?.id, seller?.id])
+
   const openOrderModal = (service) => {
     requireAuth({
       reason: '주문 신청은 로그인 후 이용할 수 있습니다.',
@@ -124,53 +161,72 @@ function SellerDetailPage() {
     })
   }
 
-  const moveToReviews = () => {
-    const element = document.getElementById('seller-review-section')
-    element?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
   const handleDeleteSellerProfile = async () => {
-    if (!isMineSellerProfile) return
-    const isConfirmed = window.confirm(
-      '판매자 프로필을 삭제하면 서비스 노출이 중단됩니다. 계속 진행할까요?',
-    )
-    if (!isConfirmed) return
+    if (!canManageSeller) return
 
     setIsDeletingSellerProfile(true)
-    const { error } = await deactivateSellerProfile({ userId: user.id })
+    const { error } = await deactivateSellerProfile({ userId: seller?.sellerUserId })
     setIsDeletingSellerProfile(false)
     if (error) {
       setLoadErrorMessage('판매자 프로필 삭제에 실패했습니다. 잠시 후 다시 시도해주세요.')
       return
     }
 
-    updateProfile({
-      ...(profile ?? {}),
-      is_seller: false,
-      seller_status: 'deleted',
-    })
-    refreshProfile().catch(() => {
-      // Keep optimistic UI state even if profile refresh fails temporarily.
-    })
+    if (user?.id === seller?.sellerUserId) {
+      updateProfile({
+        ...(profile ?? {}),
+        is_seller: false,
+        seller_status: 'deleted',
+      })
+      refreshProfile().catch(() => {
+        // Keep optimistic UI state even if profile refresh fails temporarily.
+      })
+    }
+    setIsDeleteConfirmOpen(false)
     navigate('/sellers', { replace: true })
+  }
+
+  const handleToggleFavoriteSeller = () => {
+    if (!seller?.id) return
+    requireAuth({
+      reason: '판매자 찜은 로그인 후 이용할 수 있습니다.',
+      onSuccess: async () => {
+        const { data, error } = await toggleFavorite({
+          userId: user.id,
+          targetType: 'seller',
+          targetId: String(seller.id),
+        })
+        if (error) {
+          setOrderStatusMessage(error.message ?? '찜 처리에 실패했습니다.')
+          return
+        }
+        setIsFavoriteSeller(Boolean(data?.isFavorite))
+      },
+    })
   }
 
   const handleStartChat = () => {
     requireAuth({
-      reason: '채팅 시작은 로그인 후 이용할 수 있습니다.',
-      onSuccess: () => {
-        navigate('/chat', {
-          state: {
-            startChat: {
-              sellerProfileId: seller?.id,
-              sellerUserId: seller?.sellerUserId,
-              sellerName: seller?.name,
-              sellerAvatarUrl: seller?.avatarUrl ?? '',
-              sellerAvatar: seller?.avatar ?? 'PB',
-              sellerRole: seller?.category ?? '판매자',
-            },
-          },
+      reason: '채팅신청은 로그인 후 이용할 수 있습니다.',
+      onSuccess: async () => {
+        if (!seller?.sellerUserId || !user?.id) return
+        const { error } = await pushChatRequestNotification({
+          sellerUserId: seller.sellerUserId,
+          buyerUserId: user.id,
+          actorId: user.id,
+          actorName:
+            profile?.nickname ??
+            profile?.name ??
+            user?.user_metadata?.nickname ??
+            user?.user_metadata?.name ??
+            user?.email?.split('@')?.[0] ??
+            '사용자',
         })
+        setOrderStatusMessage(
+          error
+            ? error.message ?? '채팅신청 전송 중 오류가 발생했습니다.'
+            : `${profile?.nickname ?? profile?.name ?? '사용자'}님이 채팅을 신청하였습니다.`,
+        )
       },
     })
   }
@@ -277,165 +333,76 @@ function SellerDetailPage() {
 
   return (
     <div className="page-stack">
+      {isDetailLoading ? <SectionLoader label="판매자 프로필 불러오는 중" minHeight={220} /> : null}
+
       {!isDetailLoading && !seller ? (
-        <section className="main-card">
-          <h2>판매자 정보를 찾을 수 없습니다.</h2>
-          <p className="muted">비활성화된 판매자이거나 접근할 수 없는 프로필입니다.</p>
-        </section>
+        <EmptyStateCard
+          title="판매자 정보를 찾을 수 없습니다."
+          description="비활성화된 판매자이거나 접근할 수 없는 프로필입니다."
+        />
       ) : null}
+      {!isDetailLoading && loadErrorMessage && !seller ? <p className="muted">{loadErrorMessage}</p> : null}
 
-      <section className="main-card seller-detail-profile">
-        <div className="seller-detail-head">
-          <div className={`seller-detail-avatar ${seller?.avatarUrl ? 'image' : ''}`}>
-            {seller?.avatarUrl ? (
-              <img src={seller.avatarUrl} alt={`${seller.name} 프로필`} />
-            ) : (
-              seller?.avatar ?? 'PB'
-            )}
-          </div>
-          <div>
-            <p className="badge">판매자 상세</p>
-            <h1>{seller?.name ?? '-'}</h1>
-            <p className="seller-detail-category">{seller?.category ?? '-'}</p>
-          </div>
-          <span className={`verify-badge ${seller?.verified ? 'on' : ''}`}>
-            {seller?.verified ? '인증 판매자' : '일반 판매자'}
-          </span>
-        </div>
-        <div className="seller-detail-meta">
-          <button type="button" className="seller-meta-link" onClick={moveToReviews}>
-            평점 {Number(seller?.rating ?? 0).toFixed(1)}
-          </button>
-          <button type="button" className="seller-meta-link" onClick={moveToReviews}>
-            리뷰 {seller?.reviewCount ?? 0}건
-          </button>
-          <span>활동지역 {seller?.region ?? '-'}</span>
-        </div>
-        <div className="seller-detail-actions">
-          <SecondaryButton onClick={handleStartChat}>
-            채팅 시작
-          </SecondaryButton>
-          {isMineSellerProfile ? (
-            <button
-              type="button"
-              className="seller-delete-btn"
-              onClick={handleDeleteSellerProfile}
-              disabled={isDeletingSellerProfile}
-            >
-              {isDeletingSellerProfile ? '삭제 중...' : '판매자 프로필 삭제'}
-            </button>
-          ) : null}
-        </div>
-        <p className="seller-detail-intro">{seller?.intro ?? ''}</p>
-      </section>
-
-      {isDetailLoading ? <p className="muted">판매자 정보를 불러오는 중입니다...</p> : null}
-      {loadErrorMessage ? <p className="muted">{loadErrorMessage}</p> : null}
-      {orderStatusMessage ? <p className="muted">{orderStatusMessage}</p> : null}
-
-      <section className="main-card">
-        <SectionTitle title="제공 서비스" />
-        <div className="seller-service-list">
-          {sellerServices.length === 0 ? (
-            <p className="muted">현재 등록된 서비스가 없습니다.</p>
-          ) : (
-            sellerServices.map((service) => (
-              <ServiceCard
-                key={service.id}
-                service={service}
-                onOrder={openOrderModal}
-              />
-            ))
-          )}
-        </div>
-      </section>
-
-      <section className="main-card" id="seller-review-section">
-        <SectionTitle title="리뷰" />
-        <div className="seller-review-summary">
-          <article>
-            <h3>평균 평점</h3>
-            <p>{Number(seller?.rating ?? 0).toFixed(1)}</p>
-          </article>
-          <article>
-            <h3>리뷰 수</h3>
-            <p>{seller?.reviewCount ?? 0}개</p>
-          </article>
-        </div>
-        <div className="seller-review-list">
-          {sellerReviews.length === 0 ? (
-            <p className="muted">아직 등록된 리뷰가 없습니다.</p>
-          ) : (
-            sellerReviews.map((review) => (
-              <article key={review.id} className="seller-review-item">
-                <div>
-                  <strong>{review.user}</strong>
-                  <span>{'★'.repeat(Math.max(1, Math.round(Number(review.score ?? 0))))}</span>
-                </div>
-                <p>{review.text}</p>
-                <small>{review.createdAt ? String(review.createdAt).slice(0, 10) : '작성일 미표기'}</small>
-              </article>
-            ))
-          )}
-        </div>
-
-        <div className="order-field" style={{ marginTop: 16 }}>
-          <p className="muted">리뷰 작성은 완료된 주문 건에 한해 가능합니다.</p>
-          <label>리뷰 작성 (완료 주문 1건당 1회)</label>
-          {availableReviewOrders.length === 0 ? (
-            <p className="muted">작성 가능한 완료 주문이 없습니다.</p>
-          ) : (
-            <>
-              <select
-                value={reviewOrderId}
-                onChange={(event) => setReviewOrderId(event.target.value)}
-              >
-                {availableReviewOrders.map((order) => (
-                  <option key={order.id} value={order.id}>
-                    {order.title_snapshot}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={reviewRating}
-                onChange={(event) => setReviewRating(Number(event.target.value))}
-                style={{ marginTop: 8 }}
-              >
-                <option value={5}>5점</option>
-                <option value={4}>4점</option>
-                <option value={3}>3점</option>
-                <option value={2}>2점</option>
-                <option value={1}>1점</option>
-              </select>
-            </>
-          )}
-          <textarea
-            value={reviewContent}
-            onChange={(event) => setReviewContent(event.target.value)}
-            placeholder="서비스 후기를 작성해 주세요."
-            style={{ marginTop: 8 }}
+      {!isDetailLoading && seller ? (
+        <>
+          <SellerProfileHeader
+            seller={seller}
+            isOwnerView={isOwnerView}
+            isAdminView={isAdmin && user?.id !== seller?.sellerUserId}
+            onStartChat={handleStartChat}
+            onEditProfile={() => requestSellerOnboarding({ targetUserId: seller?.sellerUserId })}
+            onDeleteProfile={() => setIsDeleteConfirmOpen(true)}
+            isDeletingSellerProfile={isDeletingSellerProfile}
+            canFavorite={!isOwnerView}
+            isFavorite={isFavoriteSeller}
+            onToggleFavorite={handleToggleFavoriteSeller}
           />
-          <SecondaryButton onClick={submitReview} disabled={isReviewSubmitting}>
-            {isReviewSubmitting ? '등록 중...' : '리뷰 등록'}
-          </SecondaryButton>
-          {reviewStatusMessage ? <p className="muted">{reviewStatusMessage}</p> : null}
-        </div>
-      </section>
 
-      <section className="main-card seller-summary-grid">
-        <article>
-          <h3>대표 서비스 수</h3>
-          <p>{sellerServices.length}개</p>
-        </article>
-        <article>
-          <h3>평균 응답시간</h3>
-          <p>{seller?.avgResponse ?? '-'}</p>
-        </article>
-        <article>
-          <h3>누적 작업 수</h3>
-          <p>{seller?.totalWorks ?? 0}건</p>
-        </article>
-      </section>
+          <SellerProfileMetaCompact seller={seller} />
+
+          {loadErrorMessage ? <p className="muted">{loadErrorMessage}</p> : null}
+          {orderStatusMessage ? <p className="muted">{orderStatusMessage}</p> : null}
+
+          <SellerServicesSection
+            services={sellerServices}
+            isOwnerView={canManageSeller}
+            onOpenCreateModal={() => setIsServiceCreateOpen(true)}
+            onOrder={openOrderModal}
+          />
+
+          <ReviewSection
+            seller={seller}
+            reviews={sellerReviews}
+            isOwnerView={isOwnerView}
+            availableReviewOrders={availableReviewOrders}
+            reviewOrderId={reviewOrderId}
+            setReviewOrderId={setReviewOrderId}
+            reviewRating={reviewRating}
+            setReviewRating={setReviewRating}
+            reviewContent={reviewContent}
+            setReviewContent={setReviewContent}
+            isReviewSubmitting={isReviewSubmitting}
+            reviewStatusMessage={reviewStatusMessage}
+            onSubmitReview={submitReview}
+            showReviewForm={isVisitorView}
+          />
+
+          <section className="main-card seller-summary-grid">
+            <article>
+              <h3>대표 서비스 수</h3>
+              <p>{sellerServices.length}개</p>
+            </article>
+            <article>
+              <h3>평균 응답시간</h3>
+              <p>{seller?.avgResponse ?? '-'}</p>
+            </article>
+            <article>
+              <h3>누적 작업 수</h3>
+              <p>{seller?.totalWorks ?? 0}건</p>
+            </article>
+          </section>
+        </>
+      ) : null}
 
       {isOrderOpen && selectedService ? (
         <div className="order-modal-overlay" role="presentation">
@@ -523,6 +490,24 @@ function SellerDetailPage() {
           </section>
         </div>
       ) : null}
+
+      <ServiceCreateModal
+        isOpen={isServiceCreateOpen}
+        sellerUserId={seller?.sellerUserId}
+        onClose={() => setIsServiceCreateOpen(false)}
+        onCreated={loadSellerDetail}
+      />
+
+      <ConfirmModal
+        isOpen={isDeleteConfirmOpen}
+        title="판매자 프로필 삭제"
+        message="판매자 프로필을 삭제하면 서비스 노출이 중단됩니다. 계속 진행할까요?"
+        confirmText="확인"
+        cancelText="취소"
+        onConfirm={handleDeleteSellerProfile}
+        onCancel={() => setIsDeleteConfirmOpen(false)}
+        isConfirming={isDeletingSellerProfile}
+      />
     </div>
   )
 }

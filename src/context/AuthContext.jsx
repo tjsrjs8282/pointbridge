@@ -8,8 +8,21 @@ import {
   signUpWithEmail,
 } from '../lib/auth'
 import { createUserProfile, getProfileByUserId } from '../lib/profile'
+import { supabase as supabaseClient } from '../lib/supabase'
+import { isAdminProfile } from '../lib/permissions'
 
 const AuthContext = createContext(null)
+const DEV_ADMIN_LOGIN_ID = 'admin'
+const DEV_ADMIN_EMAIL = 'admin@pointbridge.local'
+const DEV_ADMIN_PASSWORD = '1234'
+
+function normalizeLoginEmail(email) {
+  const normalized = String(email ?? '').trim().toLowerCase()
+  if (import.meta.env.DEV && normalized === DEV_ADMIN_LOGIN_ID) {
+    return DEV_ADMIN_EMAIL
+  }
+  return normalized
+}
 
 function normalizeProfileData(rawProfile, user) {
   if (!rawProfile && !user) return null
@@ -32,6 +45,19 @@ function normalizeProfileData(rawProfile, user) {
     created_at: rawProfile?.created_at ?? null,
     ...rawProfile,
   }
+}
+
+function toFriendlyAuthMessage(message = '', { fallback = '인증 처리 중 오류가 발생했습니다.' } = {}) {
+  const lower = String(message).toLowerCase()
+  if (lower.includes('invalid login credentials')) return '이메일 또는 비밀번호가 올바르지 않습니다.'
+  if (lower.includes('email not confirmed')) return '이메일 인증 후 로그인할 수 있습니다.'
+  if (lower.includes('already registered')) return '이미 가입된 이메일입니다. 로그인해 주세요.'
+  if (lower.includes('user already registered')) return '이미 가입된 이메일입니다. 로그인해 주세요.'
+  if (lower.includes('password')) return '비밀번호 형식을 다시 확인해 주세요.'
+  if (lower.includes('network') || lower.includes('fetch')) {
+    return '네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+  }
+  return message || fallback
 }
 
 async function resolveProfileForUser({ user, allowCreate = true }) {
@@ -101,6 +127,7 @@ export function AuthProvider({ children }) {
   const [authModalTab, setAuthModalTab] = useState('login')
   const [isSellerOnboardingOpen, setIsSellerOnboardingOpen] = useState(false)
   const [sellerProfileDraft, setSellerProfileDraft] = useState(null)
+  const [sellerOnboardingTargetUserId, setSellerOnboardingTargetUserId] = useState(null)
   const pendingAuthActionRef = useRef(null)
 
   useEffect(() => {
@@ -179,10 +206,36 @@ export function AuthProvider({ children }) {
 
   const signIn = async ({ email, password }) => {
     setAuthError(null)
-    const { data, error } = await signInWithEmail({ email, password })
+    const normalizedEmail = normalizeLoginEmail(email)
+    let signInResult = await signInWithEmail({ email: normalizedEmail, password })
+
+    const isDevAdminLogin =
+      import.meta.env.DEV &&
+      String(email ?? '').trim().toLowerCase() === DEV_ADMIN_LOGIN_ID &&
+      password === DEV_ADMIN_PASSWORD
+
+    if (signInResult.error && isDevAdminLogin) {
+      const signUpResult = await signUpWithEmail({
+        email: DEV_ADMIN_EMAIL,
+        password: DEV_ADMIN_PASSWORD,
+        metadata: {
+          name: '개발 관리자',
+          nickname: 'admin',
+          role: 'admin',
+        },
+      })
+      if (!signUpResult.error) {
+        signInResult = await signInWithEmail({ email: DEV_ADMIN_EMAIL, password: DEV_ADMIN_PASSWORD })
+      }
+    }
+
+    const { data, error } = signInResult
     if (error) {
-      setAuthError(error.message)
-      throw new Error(error.message)
+      const friendly = toFriendlyAuthMessage(error.message, {
+        fallback: '로그인 처리 중 문제가 발생했습니다.',
+      })
+      setAuthError(friendly)
+      throw new Error(friendly)
     }
     const nextSession = data?.session ?? null
     const nextUser = data?.user ?? null
@@ -193,7 +246,26 @@ export function AuthProvider({ children }) {
       user: nextUser,
       allowCreate: Boolean(nextSession?.user?.id),
     })
-    setProfile(profile ?? null)
+    if (isDevAdminLogin && nextUser?.id) {
+      await createUserProfile({
+        userId: nextUser.id,
+        name: profile?.name ?? '개발 관리자',
+        nickname: 'admin',
+        role: 'admin',
+        email: DEV_ADMIN_EMAIL,
+      })
+      await supabaseClient
+        ?.from('profiles')
+        .update({ role: 'admin', is_admin: true })
+        .eq('id', nextUser.id)
+      const { profile: refreshedAdminProfile } = await resolveProfileForUser({
+        user: nextUser,
+        allowCreate: true,
+      })
+      setProfile(refreshedAdminProfile ?? null)
+    } else {
+      setProfile(profile ?? null)
+    }
 
     return { data, error: null }
   }
@@ -210,6 +282,21 @@ export function AuthProvider({ children }) {
   }) => {
     setAuthError(null)
     console.log('[Auth][signup][debug] Supabase URL in use:', activeSupabaseUrl)
+
+    if (supabaseClient && nickname?.trim()) {
+      const duplicateNicknameResult = await supabaseClient
+        .from('profiles')
+        .select('id')
+        .eq('nickname', nickname.trim())
+        .limit(1)
+        .maybeSingle()
+      if (!duplicateNicknameResult.error && duplicateNicknameResult.data) {
+        const message = '이미 사용 중인 아이디(닉네임)입니다. 다른 값을 입력해 주세요.'
+        setAuthError(message)
+        throw new Error(message)
+      }
+    }
+
     const { data, error } = await signUpWithEmail({
       email,
       password,
@@ -223,8 +310,11 @@ export function AuthProvider({ children }) {
       },
     })
     if (error) {
-      setAuthError(error.message)
-      throw new Error(error.message)
+      const friendly = toFriendlyAuthMessage(error.message, {
+        fallback: '회원가입 처리 중 문제가 발생했습니다.',
+      })
+      setAuthError(friendly)
+      throw new Error(friendly)
     }
 
     const nextSession = data?.session ?? null
@@ -267,14 +357,14 @@ export function AuthProvider({ children }) {
   const signOut = async () => {
     setAuthError(null)
     const { error } = await signOutUser()
-    if (error) {
-      setAuthError(error.message)
-      throw new Error(error.message)
-    }
     setSession(null)
     setUser(null)
     setProfile(null)
-    return { data: { signedOut: true }, error: null }
+    if (error) {
+      setAuthError(error.message)
+      console.warn('[Auth] signOut incomplete', error.message)
+    }
+    return { data: { signedOut: true }, error: error ?? null }
   }
 
   const closeLoginModal = useCallback(() => {
@@ -312,20 +402,26 @@ export function AuthProvider({ children }) {
     if (typeof pendingAction === 'function') pendingAction()
   }, [])
 
-  const openSellerOnboarding = useCallback(() => {
+  const openSellerOnboarding = useCallback(({ targetUserId = null } = {}) => {
+    setSellerOnboardingTargetUserId(targetUserId)
     setIsSellerOnboardingOpen(true)
   }, [])
 
   const closeSellerOnboarding = useCallback(() => {
+    setSellerOnboardingTargetUserId(null)
     setIsSellerOnboardingOpen(false)
   }, [])
 
-  const requestSellerOnboarding = useCallback(() => {
+  const requestSellerOnboarding = useCallback(({ targetUserId = null } = {}) => {
     requireAuth({
       reason: '판매자 등록은 로그인 후 이용할 수 있습니다.',
-      onSuccess: openSellerOnboarding,
+      onSuccess: () => {
+        const isAdmin = isAdminProfile(profile)
+        if (targetUserId && targetUserId !== user?.id && !isAdmin) return
+        openSellerOnboarding({ targetUserId })
+      },
     })
-  }, [requireAuth, openSellerOnboarding])
+  }, [openSellerOnboarding, profile, requireAuth, user?.id])
 
   const saveSellerProfileDraft = useCallback((draft) => {
     setSellerProfileDraft({
@@ -342,6 +438,7 @@ export function AuthProvider({ children }) {
         : prev,
     )
     setIsSellerOnboardingOpen(false)
+    setSellerOnboardingTargetUserId(null)
   }, [])
 
   const updateProfile = useCallback((nextProfile) => {
@@ -380,6 +477,7 @@ export function AuthProvider({ children }) {
       handleModalLoginSuccess,
       isSellerOnboardingOpen,
       sellerProfileDraft,
+      sellerOnboardingTargetUserId,
       requestSellerOnboarding,
       closeSellerOnboarding,
       saveSellerProfileDraft,
@@ -401,6 +499,7 @@ export function AuthProvider({ children }) {
       handleModalLoginSuccess,
       isSellerOnboardingOpen,
       sellerProfileDraft,
+      sellerOnboardingTargetUserId,
       requestSellerOnboarding,
       closeSellerOnboarding,
       saveSellerProfileDraft,

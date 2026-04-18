@@ -1,9 +1,18 @@
 import { useState } from 'react'
 import useAuth from '../hooks/useAuth'
 import { openKakaoPostcode } from '../lib/postcode'
+import { NICKNAME_MAX_LENGTH, validateNickname } from '../lib/userProfileRules'
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/
+const DEV_ADMIN_LOGIN_ID = 'admin'
+
+function canUseDevAdminAlias() {
+  if (import.meta.env.DEV) return true
+  if (typeof window === 'undefined') return false
+  const host = String(window.location?.hostname ?? '').toLowerCase()
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+}
 
 function formatPhoneNumber(value) {
   const digits = String(value ?? '').replace(/\D/g, '').slice(0, 11)
@@ -49,7 +58,9 @@ function LoginModal() {
   const validateLogin = () => {
     const nextErrors = {}
     if (!loginForm.email.trim()) nextErrors.email = '이메일을 입력해 주세요.'
-    if (loginForm.email && !emailRegex.test(loginForm.email)) {
+    const isDevAdminAlias =
+      canUseDevAdminAlias() && String(loginForm.email ?? '').trim().toLowerCase() === DEV_ADMIN_LOGIN_ID
+    if (loginForm.email && !emailRegex.test(loginForm.email) && !isDevAdminAlias) {
       nextErrors.email = '올바른 이메일 형식이 아닙니다.'
     }
     if (!loginForm.password) nextErrors.password = '비밀번호를 입력해 주세요.'
@@ -59,7 +70,8 @@ function LoginModal() {
   const validateSignup = () => {
     const nextErrors = {}
     if (!signupForm.name.trim()) nextErrors.name = '이름을 입력해 주세요.'
-    if (!signupForm.nickname.trim()) nextErrors.nickname = '닉네임을 입력해 주세요.'
+    const nicknameValidation = validateNickname(signupForm.nickname)
+    if (!nicknameValidation.ok) nextErrors.nickname = nicknameValidation.message
     if (!signupForm.email.trim()) nextErrors.email = '이메일을 입력해 주세요.'
     if (signupForm.email && !emailRegex.test(signupForm.email)) {
       nextErrors.email = '올바른 이메일 형식이 아닙니다.'
@@ -223,6 +235,7 @@ function LoginModal() {
               <input
                 type="text"
                 placeholder="닉네임을 입력하세요"
+                maxLength={NICKNAME_MAX_LENGTH}
                 value={signupForm.nickname}
                 onChange={(event) =>
                   setSignupForm((prev) => ({ ...prev, nickname: event.target.value }))
@@ -340,10 +353,10 @@ function LoginModal() {
         ) : (
           <form className="auth-form" onSubmit={handleLoginSubmit}>
             <label>
-              이메일
+              이메일 ({canUseDevAdminAlias() ? '로컬 실행에서는 admin 입력 가능' : '이메일 형식으로 입력'})
               <input
-                type="email"
-                placeholder="you@example.com"
+                type="text"
+                placeholder={canUseDevAdminAlias() ? 'you@example.com 또는 admin' : 'you@example.com'}
                 value={loginForm.email}
                 onChange={(event) =>
                   setLoginForm((prev) => ({ ...prev, email: event.target.value }))

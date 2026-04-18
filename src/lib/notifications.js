@@ -11,6 +11,13 @@ export const REJECTION_REASONS = [
   { code: 'other', label: '기타' },
 ]
 
+export const CHAT_REJECTION_REASONS = [
+  { code: 'busy_schedule', label: '현재 일정상 채팅 응답이 어렵습니다.' },
+  { code: 'insufficient_info', label: '요청 정보가 부족해 진행이 어렵습니다.' },
+  { code: 'out_of_scope', label: '요청 내용이 제공 범위를 벗어났습니다.' },
+  { code: 'other', label: '기타' },
+]
+
 function nowIso() {
   return new Date().toISOString()
 }
@@ -112,13 +119,32 @@ function normalizeError(error, fallbackMessage) {
 
 function isSchemaCompatibilityError(error) {
   const message = String(error?.message ?? '').toLowerCase()
+  const code = String(error?.code ?? '').toUpperCase()
   return (
+    code === 'PGRST204' ||
+    code === '23502' ||
+    code === '22P02' ||
     message.includes('column') ||
     message.includes('does not exist') ||
     message.includes('schema') ||
     message.includes('relation') ||
     error?.code === 'PGRST204'
   )
+}
+
+function normalizeUuidOrNull(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  return uuidPattern.test(raw) ? raw : null
+}
+
+function normalizeBigintOrNull(value) {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return null
+  if (!Number.isInteger(parsed)) return null
+  return parsed
 }
 
 function mapNotificationRow(row) {
@@ -153,18 +179,30 @@ function mapNotificationRow(row) {
 async function insertNotification(payload) {
   if (!supabase) return { data: null, error: { message: 'SUPABASE_NOT_CONFIGURED' } }
 
+  const safePayload = {
+    ...payload,
+    type: payload.type ?? payload.action_type ?? 'system',
+    order_id: normalizeUuidOrNull(payload.order_id),
+    service_id: normalizeUuidOrNull(payload.service_id),
+    related_order_id: normalizeBigintOrNull(payload.related_order_id ?? payload.order_id),
+  }
+
   // New schema first
-  const { data, error } = await supabase.from('notifications').insert(payload).select('*').single()
+  const { data, error } = await supabase
+    .from('notifications')
+    .insert(safePayload)
+    .select('*')
+    .single()
   if (!error) return { data, error: null }
   if (!isSchemaCompatibilityError(error)) return { data: null, error }
 
   // Legacy fallback schema compatibility
   const legacyPayload = {
-    user_id: payload.user_id,
-    type: payload.action_type ?? payload.type ?? 'system',
-    title: payload.title ?? '알림',
-    body: payload.body ?? '',
-    related_order_id: payload.order_id ?? null,
+    user_id: safePayload.user_id,
+    type: safePayload.action_type ?? safePayload.type ?? 'system',
+    title: safePayload.title ?? '알림',
+    body: safePayload.body ?? '',
+    related_order_id: safePayload.related_order_id ?? null,
     is_read: false,
   }
   const legacyResult = await supabase
@@ -213,7 +251,21 @@ export async function readNotificationsForUser({ userId, displayName = '사용�
 }
 
 export async function markNotificationAsRead({ notificationId }) {
-  if (!supabase || !notificationId) return { data: null, error: null }
+  if (!notificationId) return { data: null, error: null }
+  if (!supabase) {
+    const all = readAll()
+    saveAll(
+      all.map((item) =>
+        item.notificationId === notificationId
+          ? {
+              ...item,
+              isRead: true,
+            }
+          : item,
+      ),
+    )
+    return { data: null, error: null }
+  }
   const { data, error } = await supabase
     .from('notifications')
     .update({ is_read: true, read_at: new Date().toISOString() })
@@ -222,6 +274,67 @@ export async function markNotificationAsRead({ notificationId }) {
     .single()
   if (error) return { data: null, error: normalizeError(error, '알림 읽음 처리에 실패했습니다.') }
   return { data, error: null }
+}
+
+export async function markAllNotificationsAsRead({ userId }) {
+  if (!userId) return { data: null, error: null }
+  if (!supabase) {
+    const all = readAll()
+    saveAll(
+      all.map((item) =>
+        item.userId === userId
+          ? {
+              ...item,
+              isRead: true,
+            }
+          : item,
+      ),
+    )
+    return { data: null, error: null }
+  }
+
+  const { data, error } = await supabase
+    .from('notifications')
+    .update({ is_read: true, read_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .select('*')
+  if (error) return { data: null, error: normalizeError(error, '전체 알림 읽음 처리에 실패했습니다.') }
+  return { data, error: null }
+}
+
+export async function deleteNotification({ notificationId, userId = null }) {
+  if (!notificationId) return { data: null, error: null }
+  if (!supabase) {
+    const all = readAll()
+    const next = all.filter((item) => {
+      if (item.notificationId !== notificationId) return true
+      if (!userId) return false
+      return item.userId !== userId
+    })
+    saveAll(next)
+    return { data: null, error: null }
+  }
+
+  let query = supabase.from('notifications').delete().eq('id', notificationId)
+  if (userId) {
+    query = query.eq('user_id', userId)
+  }
+  const { error } = await query
+  if (error) return { data: null, error: normalizeError(error, '알림 삭제에 실패했습니다.') }
+  return { data: { notificationId }, error: null }
+}
+
+export async function deleteAllNotificationsForUser({ userId }) {
+  if (!userId) return { data: null, error: null }
+  if (!supabase) {
+    const all = readAll()
+    saveAll(all.filter((item) => item.userId !== userId))
+    return { data: null, error: null }
+  }
+
+  const { error } = await supabase.from('notifications').delete().eq('user_id', userId)
+  if (error) return { data: null, error: normalizeError(error, '전체 알림 삭제에 실패했습니다.') }
+  return { data: null, error: null }
 }
 
 export async function pushServiceRequestNotification({
@@ -466,4 +579,262 @@ export async function pushDecisionNotification({
     }
   }
   return { data: insertResult.data, error: null }
+}
+
+export async function pushChatRequestNotification({
+  sellerUserId,
+  buyerUserId,
+  actorId,
+  actorName,
+  requestId = randomId('chat-req'),
+}) {
+  const safeActorName = actorName ?? '사용자'
+  if (!supabase) {
+    const all = readAll()
+    const now = nowIso()
+    const sellerNotification = {
+      notificationId: randomId('noti'),
+      userId: sellerUserId,
+      type: 'chat_request',
+      actionType: 'chat_request',
+      actorId: actorId ?? buyerUserId,
+      actorName: safeActorName,
+      sellerId: sellerUserId,
+      buyerId: buyerUserId,
+      serviceId: null,
+      serviceTitle: '채팅신청',
+      points: 0,
+      status: 'pending',
+      rejectionReasonCode: '',
+      rejectionReasonText: '',
+      createdAt: now,
+      isRead: false,
+      orderId: null,
+      requestId,
+      metadata: { request_id: requestId, seller_id: sellerUserId, buyer_id: buyerUserId },
+      message: `${safeActorName}님이 채팅을 신청하였습니다.`,
+    }
+    const buyerNotification = {
+      notificationId: randomId('noti'),
+      userId: buyerUserId,
+      type: 'chat_request',
+      actionType: 'chat_request_sent',
+      actorId: sellerUserId,
+      actorName: 'PointBridge',
+      sellerId: sellerUserId,
+      buyerId: buyerUserId,
+      serviceId: null,
+      serviceTitle: '채팅신청',
+      points: 0,
+      status: 'pending',
+      rejectionReasonCode: '',
+      rejectionReasonText: '',
+      createdAt: now,
+      isRead: false,
+      orderId: null,
+      requestId,
+      metadata: { request_id: requestId, seller_id: sellerUserId, buyer_id: buyerUserId },
+      message: '채팅신청이 접수되었습니다. 판매자 응답을 기다려 주세요.',
+    }
+    saveAll([...all, sellerNotification, buyerNotification])
+    return { data: { requestId }, error: null }
+  }
+
+  const sellerPayload = {
+    user_id: sellerUserId,
+    actor_user_id: actorId ?? buyerUserId,
+    action_type: 'chat_request',
+    title: '채팅신청 도착',
+    body: `${safeActorName}님이 채팅을 신청하였습니다.`,
+    is_read: false,
+    metadata: {
+      actor_name: safeActorName,
+      seller_id: sellerUserId,
+      buyer_id: buyerUserId,
+      request_id: requestId,
+      status: 'pending',
+    },
+  }
+  const buyerPayload = {
+    user_id: buyerUserId,
+    actor_user_id: sellerUserId,
+    action_type: 'chat_request_sent',
+    title: '채팅신청 접수',
+    body: '채팅신청이 접수되었습니다. 판매자 응답을 기다려 주세요.',
+    is_read: false,
+    metadata: {
+      actor_name: 'PointBridge',
+      seller_id: sellerUserId,
+      buyer_id: buyerUserId,
+      request_id: requestId,
+      status: 'pending',
+    },
+  }
+  const [sellerInsert, buyerInsert] = await Promise.all([
+    insertNotification(sellerPayload),
+    insertNotification(buyerPayload),
+  ])
+  const insertionError = sellerInsert.error ?? buyerInsert.error
+  if (insertionError) {
+    return {
+      data: null,
+      error: normalizeError(insertionError, '채팅신청 알림 생성에 실패했습니다.'),
+    }
+  }
+  return { data: { requestId }, error: null }
+}
+
+export async function pushChatDecisionNotification({
+  buyerUserId,
+  sellerUserId,
+  actorName,
+  status,
+  requestId,
+  rejectionReasonCode = '',
+  rejectionReasonText = '',
+}) {
+  const reasonText = rejectionReasonText || (rejectionReasonCode ? toReasonLabel(rejectionReasonCode) : '')
+  const accepted = status === 'accepted'
+  const actionType = accepted ? 'chat_request_accepted' : 'chat_request_rejected'
+  const title = accepted ? '채팅신청 수락' : '채팅신청 거절'
+  const body = accepted
+    ? '채팅신청이 수락되었습니다. 이제 대화를 시작할 수 있습니다.'
+    : reasonText
+      ? `다음 사유로 채팅신청이 거절되었습니다: ${reasonText}`
+      : '채팅신청이 거절되었습니다.'
+
+  if (!supabase) {
+    const all = readAll()
+    const item = {
+      notificationId: randomId('noti'),
+      userId: buyerUserId,
+      type: 'chat_request',
+      actionType,
+      actorId: sellerUserId,
+      actorName: actorName ?? '판매자',
+      sellerId: sellerUserId,
+      buyerId: buyerUserId,
+      serviceId: null,
+      serviceTitle: '채팅신청',
+      points: 0,
+      status,
+      rejectionReasonCode,
+      rejectionReasonText: reasonText,
+      createdAt: nowIso(),
+      isRead: false,
+      orderId: null,
+      requestId,
+      metadata: {
+        seller_id: sellerUserId,
+        buyer_id: buyerUserId,
+        request_id: requestId,
+        status,
+        rejection_reason_code: rejectionReasonCode,
+        rejection_reason_text: reasonText,
+      },
+      message: body,
+    }
+    saveAll([...all, item])
+    return { data: item, error: null }
+  }
+
+  const payload = {
+    user_id: buyerUserId,
+    actor_user_id: sellerUserId,
+    action_type: actionType,
+    title,
+    body,
+    is_read: false,
+    metadata: {
+      actor_name: actorName ?? '판매자',
+      seller_id: sellerUserId,
+      buyer_id: buyerUserId,
+      request_id: requestId,
+      status,
+      rejection_reason_code: rejectionReasonCode,
+      rejection_reason_text: reasonText,
+    },
+  }
+  const insertResult = await insertNotification(payload)
+  if (insertResult.error) {
+    return {
+      data: null,
+      error: normalizeError(insertResult.error, '채팅신청 상태 알림 생성에 실패했습니다.'),
+    }
+  }
+  return { data: insertResult.data, error: null }
+}
+
+export async function pushAdminNotification({
+  userIds = [],
+  title = '운영 알림',
+  body = '',
+  notificationType = 'admin_message',
+  actorName = 'PointBridge 운영팀',
+}) {
+  const normalizedIds = Array.from(new Set((userIds ?? []).filter(Boolean)))
+  if (normalizedIds.length === 0) {
+    return {
+      data: null,
+      error: {
+        message: '알림을 보낼 사용자 ID가 없습니다.',
+        code: 'MISSING_TARGET_USERS',
+      },
+    }
+  }
+
+  if (!supabase) {
+    const all = readAll()
+    const now = nowIso()
+    const inserted = normalizedIds.map((userId) => ({
+      notificationId: randomId('noti'),
+      userId,
+      type: notificationType,
+      actionType: 'system',
+      actorId: null,
+      actorName,
+      sellerId: null,
+      buyerId: null,
+      serviceId: null,
+      serviceTitle: '',
+      points: 0,
+      status: 'accepted',
+      rejectionReasonCode: '',
+      rejectionReasonText: '',
+      createdAt: now,
+      isRead: false,
+      orderId: null,
+      requestId: null,
+      metadata: {
+        actor_name: actorName,
+        admin_message: true,
+      },
+      message: body || title,
+    }))
+    saveAll([...all, ...inserted])
+    return { data: inserted, error: null }
+  }
+
+  const payloads = normalizedIds.map((userId) => ({
+    user_id: userId,
+    actor_user_id: null,
+    action_type: 'system',
+    type: notificationType,
+    title,
+    body: body || title,
+    is_read: false,
+    metadata: {
+      actor_name: actorName,
+      admin_message: true,
+    },
+  }))
+
+  const { data, error } = await supabase.from('notifications').insert(payloads).select('*')
+  if (error) {
+    return {
+      data: null,
+      error: normalizeError(error, '운영 알림 발송에 실패했습니다.'),
+    }
+  }
+  return { data: data ?? [], error: null }
 }

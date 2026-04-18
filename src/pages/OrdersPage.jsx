@@ -23,8 +23,7 @@ function OrdersPage() {
 
   return (
     <div className="page-stack">
-      <section className="main-card hero-card">
-        <p className="badge">주문내역</p>
+      <section className="main-card hero-card hero-card--tight">
         <h1>주문내역</h1>
         <p>진행 중인 요청과 완료된 작업을 한 번에 확인합니다.</p>
       </section>

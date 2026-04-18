@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import useAuth from '../hooks/useAuth'
+import { NICKNAME_MAX_LENGTH, validateNickname } from '../lib/userProfileRules'
 
 function getProfileFailureNotice(profileError) {
   if (!profileError) return null
@@ -28,6 +29,7 @@ function SignupPage() {
   const { signUp } = useAuth()
   const [form, setForm] = useState({
     name: '',
+    nickname: '',
     email: '',
     password: '',
     passwordConfirm: '',
@@ -40,6 +42,8 @@ function SignupPage() {
   const validate = () => {
     const nextErrors = {}
     if (!form.name.trim()) nextErrors.name = '이름을 입력해 주세요.'
+    const nicknameValidation = validateNickname(form.nickname)
+    if (!nicknameValidation.ok) nextErrors.nickname = nicknameValidation.message
     if (!form.email.trim()) nextErrors.email = '이메일을 입력해 주세요.'
     if (!form.email.includes('@')) nextErrors.email = '올바른 이메일 형식이 아닙니다.'
     if (form.password.length < 6) nextErrors.password = '비밀번호는 6자 이상 입력해 주세요.'
@@ -60,6 +64,7 @@ function SignupPage() {
       setIsSubmitting(true)
       const result = await signUp({
         name: form.name,
+        nickname: form.nickname,
         email: form.email,
         password: form.password,
         role: form.role,
@@ -101,6 +106,19 @@ function SignupPage() {
             }
           />
           {errors.name ? <small className="auth-error">{errors.name}</small> : null}
+        </label>
+        <label>
+          아이디(닉네임)
+          <input
+            type="text"
+            placeholder="사용할 아이디를 입력하세요"
+            maxLength={NICKNAME_MAX_LENGTH}
+            value={form.nickname}
+            onChange={(event) =>
+              setForm((prev) => ({ ...prev, nickname: event.target.value }))
+            }
+          />
+          {errors.nickname ? <small className="auth-error">{errors.nickname}</small> : null}
         </label>
         <label>
           이메일

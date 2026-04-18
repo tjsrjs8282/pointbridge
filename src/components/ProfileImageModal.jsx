@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import useAuth from '../hooks/useAuth'
 import { uploadProfileAvatar } from '../lib/profile'
+import { validateImageFile } from '../lib/imageUpload'
 
 function ProfileImageModal({ isOpen, onClose, onSaved }) {
   const { user, profile, updateProfile, refreshProfile } = useAuth()
@@ -22,6 +23,16 @@ function ProfileImageModal({ isOpen, onClose, onSaved }) {
   const handleFileChange = (event) => {
     const file = event.target.files?.[0]
     if (!file) return
+    const validation = validateImageFile(file, {
+      maxSizeBytes: 1 * 1024 * 1024,
+      allowedExtensions: ['jpg', 'jpeg'],
+    })
+    if (!validation.ok) {
+      setSaveError(validation.message)
+      setSelectedFile(null)
+      return
+    }
+    setSaveError('')
     setSelectedFile(file)
     const reader = new FileReader()
     reader.onload = () => {
@@ -83,7 +94,7 @@ function ProfileImageModal({ isOpen, onClose, onSaved }) {
             ref={fileInputRef}
             type="file"
             className="profile-avatar-file-input"
-            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+            accept=".jpg,.jpeg,image/jpeg"
             onChange={handleFileChange}
           />
           <button
@@ -94,6 +105,8 @@ function ProfileImageModal({ isOpen, onClose, onSaved }) {
             새 이미지 선택
           </button>
           {selectedFile ? <small className="profile-image-file-name">{selectedFile.name}</small> : null}
+          <small className="profile-image-file-name">jpg 이미지, 1MB 이하만 업로드할 수 있습니다.</small>
+          <small className="profile-image-file-name">권장 사이즈: 80×80px</small>
         </div>
 
         <div className="profile-edit-footer profile-image-footer">
